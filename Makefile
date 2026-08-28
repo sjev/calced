@@ -1,4 +1,4 @@
-.PHONY: README.md deploy-web build-pypi release test-property
+.PHONY: README.md deploy-web build-pypi release test-property test-diff
 README.md:
 	uvx --from cogapp cog -r README.md
 
@@ -8,6 +8,11 @@ test-py:
 	python3 -m unittest discover -s tests
 	@for f in tests/*.md; do python/calced.py "$$f"; done
 	git diff --exit-code -- tests/*.md
+
+# Generated cases run through both engines; any difference fails.
+# tests/test_differential.py also runs inside test-py, at a smaller default size.
+test-diff:
+	CALCED_FUZZ_N=3000 python3 -m unittest tests.test_differential -v
 
 test-property:
 	uv run --with hypothesis --with pytest pytest tests/test_properties.py -v

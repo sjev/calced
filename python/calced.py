@@ -11,7 +11,7 @@ import json
 import math
 import os
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 import sys
 import time
 import zlib
@@ -77,6 +77,22 @@ SI_PREFIX = {
 SI_SUFFIX_RE = "[" + re.escape("".join(SI_PREFIX.keys())) + "]"
 # exponent -> prefix for engineering output ("K" and "μ" are input-only aliases)
 ENG_SUFFIX = {round(math.log10(float(v))): k for k, v in SI_PREFIX.items() if k not in ("K", "μ")}
+
+MAX_RESULT_DIGITS = 1000
+
+
+def _pow_exceeds_limit(base, exp):
+    """True when base**exp has more than MAX_RESULT_DIGITS digits.
+
+    Bounds the size of the exact result, which is what makes the web engine slow:
+    render() runs there on every keystroke.
+    """
+    try:
+        e = abs(float(exp))
+    except (ValueError, OverflowError):
+        return True
+    return e * len(base.normalize().as_tuple().digits) > MAX_RESULT_DIGITS
+
 
 def _float_func(fn):
     """Wrap a math.* function: Decimal -> float -> compute -> Decimal."""
@@ -613,10 +629,19 @@ class Parser:
         if self.peek()[0] == "POW":
             self.consume()
             exp = self.parse_power()
+            if _pow_exceeds_limit(base, exp):
+                raise ParseError("result too large")
+            if exp == exp.to_integral_value():
+                try:
+                    return base**exp
+                except (InvalidOperation, ArithmeticError):
+                    pass  # e.g. 0**0, which Decimal refuses but float defines
+            # non-integer exponent, or a case Decimal refuses: the float path, as
+            # the JS engine and the other transcendentals already use
             try:
-                return base**exp
-            except InvalidOperation:
                 return Decimal(str(float(base) ** float(exp)))
+            except (ArithmeticError, ValueError, InvalidOperation):
+                raise ParseError("result too large")
         return base
 
     def parse_unary(self):
@@ -882,7 +907,7 @@ def _try_parse(math_tokens):
         if ok and depth == 0:
             return result, parser.pos
         return None, -1
-    except (ParseError, ZeroDivisionError, ValueError, OverflowError, InvalidOperation):
+    except (ParseError, ArithmeticError, ValueError):
         return None, -1
 
 
@@ -1148,13 +1173,35 @@ def evaluate_line(text, variables, rates=None, results_acc=None):
     return result, variables, has_total
 
 
+def _fixed(d, places, group=True):
+    """Round half-even to `places` decimals. Never falls back to exponential."""
+    return format(d, ("," if group else "") + "." + str(places) + "f")
+
+
+def _sci(d, dec):
+    """Scientific notation, half-even, exponent padded to two digits."""
+    if d == 0:
+        # Decimal formats zero with a stray exponent (0E-6 -> "0.00000e-1")
+        return ("0." + "0" * dec if dec else "0") + "e+00"
+    return re.sub(r"e([+-])(\d)$", r"e\g<1>0\2", format(d, "." + str(dec) + "e"))
+
+
+def _strip(s):
+    """Drop trailing fraction zeros."""
+    return s.rstrip("0").rstrip(".") if "." in s else s
+
+
 def format_result(n, fmt_opts=None):
-    """Format a number according to fmt_opts."""
+    """Format a number according to fmt_opts.
+
+    Formats from the exact decimal value, never via float, so that this and the
+    JS engine agree. Rounding is half-even in every mode.
+    """
     if isinstance(n, datetime.date):
         return n.isoformat()
     if fmt_opts is None:
-        fmt_opts = {"mode": "minSig", "precision": 10, "separator": "underscore"}
-    n = float(n)  # Decimal→float for display (float's ~15 digits > max display precision)
+        fmt_opts = DEFAULT_FMT_OPTS
+    d = n if isinstance(n, Decimal) else Decimal(str(n))
     mode = fmt_opts["mode"]
     prec = fmt_opts["precision"]
     sep = fmt_opts["separator"]
@@ -1168,46 +1215,45 @@ def format_result(n, fmt_opts=None):
             return s.replace(",", " ")
         return s.replace(",", "")  # "off"
 
+    if not d.is_finite() or abs(d.adjusted()) > MAX_RESULT_DIGITS:
+        return "too large"
+
     if mode == "minSig":
-        if n == 0:
-            s = "0"
-        else:
-            show_dec = max(-math.floor(math.log10(abs(n)) + 1) + prec, 0)
-            rounded = round(n, show_dec)
-            if show_dec == 0:
-                s = f"{int(rounded):,}"
-            else:
-                s = f"{rounded:,.{show_dec}f}"
-                s = s.rstrip("0").rstrip(".")
-        return apply_sep(s)
+        if d == 0:
+            return apply_sep("0")
+        show_dec = max(prec - d.adjusted() - 1, 0)
+        return apply_sep(_strip(_fixed(d, show_dec)) if show_dec else _fixed(d, 0))
 
     if mode == "fixed":
-        return apply_sep(f"{n:,.{prec}f}")
+        return apply_sep(_fixed(d, prec))
 
     if mode == "scientific":
-        # prec = sig figs; Python's e format takes decimal places = sig figs - 1
-        return f"{n:.{max(prec - 1, 0)}e}"
+        return _sci(d, max(prec - 1, 0))
 
     if mode == "eng":
-        if n == 0:
+        if d == 0:
             return "0"
-        exp = math.floor(math.log10(abs(n)))
-        e3 = math.floor(exp / 3) * 3
+        exp = d.adjusted()
+        e3 = (exp // 3) * 3
         dec = max(prec - (exp - e3) - 1, 0)
-        mant = round(n / 10**e3, dec)
+        mant = d.scaleb(-e3).quantize(Decimal(1).scaleb(-dec), rounding=ROUND_HALF_EVEN)
         if abs(mant) >= 1000:  # rounding pushed the mantissa up a decade
-            mant, e3 = mant / 1000, e3 + 3
+            mant, e3 = mant.scaleb(-3), e3 + 3
         if e3 == 0 or e3 in ENG_SUFFIX:
-            s = f"{mant:.{dec}f}"
-            if "." in s:
-                s = s.rstrip("0").rstrip(".")
-            return s + ENG_SUFFIX.get(e3, "")
-        return f"{n:.{max(prec - 1, 0)}e}"  # outside the SI range
+            return _strip(_fixed(mant, dec, group=False)) + ENG_SUFFIX.get(e3, "")
+        return _sci(d, max(prec - 1, 0))  # outside the SI range
 
     if mode == "auto":
-        return f"{n:.{prec}g}"
+        # %g semantics: exponential when exp < -4 or exp >= precision, zeros stripped
+        if d == 0:
+            return "0"
+        exp = d.adjusted()
+        if exp < -4 or exp >= prec:
+            mant, _, e = _sci(d, max(prec - 1, 0)).partition("e")
+            return _strip(mant) + "e" + e
+        return _strip(_fixed(d, max(prec - 1 - exp, 0), group=False))
 
-    return str(n)
+    return str(d)
 
 
 def _process_lines(content):

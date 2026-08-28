@@ -75,5 +75,11 @@
   {"note": "trailing text with hyphenated word", "text": "Other non-CELO (converted, approx) 437", "variables": {}, "expected": 437.0},
   {"note": "word label before bare date → plain text", "text": "rates from 2026-03-26", "variables": {}, "expected": null},
   {"note": "bare date without label still works", "text": "2025-06-15", "variables": {}, "expected": "2025-06-15"},
-  {"note": "URL with trailing number → plain text", "text": "Fees from https://dune.com/queries/6914777", "variables": {}, "expected": null}
+  {"note": "URL with trailing number → plain text", "text": "Fees from https://dune.com/queries/6914777", "variables": {}, "expected": null},
+  {"text": "2 ^ 50", "variables": {}, "expected": 1125899906842624.0},
+  {"text": "0 ^ 0", "variables": {}, "expected": 1.0},
+  {"text": "2 ^ 100000", "variables": {}, "expected": null, "note": "guarded: exact result exceeds MAX_RESULT_DIGITS"},
+  {"text": "9 ^ 9 ^ 9", "variables": {}, "expected": null, "note": "guarded"},
+  {"text": "2 ^ 1000000", "variables": {}, "expected": null, "note": "guarded"},
+  {"text": "1.23456789 ^ 1000", "variables": {}, "expected": null, "note": "guarded: 9 digits x 1000 exceeds MAX_RESULT_DIGITS"}
 ]
