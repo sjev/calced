@@ -119,6 +119,22 @@ header div { display: flex; gap: 8px; }
 }
 .cs-foot a { color: var(--accent); font-size: 0.85em; text-decoration: none; }
 .cs-foot a:hover { text-decoration: underline; }
+.cs-hint { float: left; color: var(--dim); font-size: 0.85em; }
+#ac {
+  position: fixed; z-index: 20; min-width: 200px; max-width: min(360px, 90vw);
+  max-height: 240px; overflow-y: auto; font-size: 0.85em;
+  background: var(--header-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
+}
+.ac-item {
+  display: flex; justify-content: space-between; gap: 16px;
+  padding: 3px 10px; cursor: pointer; white-space: nowrap;
+}
+.ac-desc { color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+.ac-item.sel { background: var(--accent); color: var(--header-bg); }
+.ac-item.sel .ac-desc { color: var(--header-bg); opacity: 0.75; }
+.ac-item:hover:not(.sel) { background: color-mix(in srgb, var(--text) 8%, transparent); }
 </style>
 </head>
 <body>
@@ -184,6 +200,7 @@ header div { display: flex; gap: 8px; }
     </div>
   </div>
   <div class="cs-foot">
+    <span class="cs-hint">Suggestions appear as you type. Ctrl+Space shows the full list.</span>
     <a href="https://github.com/sjev/calced#features" target="_blank" rel="noopener">Full docs &#x2192;</a>
     <a href="https://github.com/karlb/calced" target="_blank" rel="noopener">Fork of calced by Karl Bartel</a>
   </div>
@@ -197,6 +214,7 @@ header div { display: flex; gap: 8px; }
     <div id="results"></div>
   </div>
 </div>
+<div id="ac" hidden></div>
 <!-- BEGIN CALCED ENGINE -->
 <script>
 // -- CALCED ENGINE BEGIN --
@@ -1282,6 +1300,7 @@ const highlight = document.getElementById("highlight");
 const shareBtn = document.getElementById("share-btn");
 const docsBtn = document.getElementById("docs-btn");
 const cheatsheet = document.getElementById("cheatsheet");
+let lastVarValues = {};  // lower-case variable name -> rendered value, for autocomplete
 
 // --- Docs Panel ---
 const EXAMPLES = {
@@ -1329,6 +1348,12 @@ function render() {
   const output = processText(cleaned);
   const aligned = alignDecimalPoints(output, lines, "frac");
   const indicators = computeTotalIndicators(output, lines);
+  lastVarValues = {};
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*[@#]/.test(lines[i]) || !output[i] || output[i].result === null) continue;
+    const m = lines[i].match(ASSIGN_RE);
+    if (m) lastVarValues[m[1].toLowerCase()] = output[i].result;
+  }
   results.innerHTML = aligned.map((r, i) => {
     const cls = ["result-line"];
     if (indicators[i] === "summed") cls.push("summed");
@@ -1387,6 +1412,297 @@ editorInner.addEventListener("mousemove", e => {
   setHoveredLine(-1);
 });
 editorInner.addEventListener("mouseleave", () => setHoveredLine(-1));
+
+// -- CALCED SUGGEST BEGIN --
+// Autocomplete vocabulary. The engine tables above are the source of truth for
+// functions, constants, units and date words. Only the lists that the engine
+// keeps inside a regex or an inline literal are repeated here.
+const SUGGEST_DIRECTIVES = [
+  ["@format", "@format = ", "number output format"],
+  ["@separator", "@separator = ", "thousands separator"],
+  ["@rate", "@rate ", "rate: @rate USD/EUR = 0.92"],
+];
+const SUGGEST_FORMATS = [
+  ["minSig", "minSig(10)", "at least N significant digits"],
+  ["fixed", "fixed(2)", "N digits after the point"],
+  ["scientific", "scientific(3)", "1.23e+6"],
+  ["eng", "eng(3)", "SI suffix: 1.23M"],
+  ["auto", "auto", "shortest exact form"],
+];
+const SUGGEST_SEPARATORS = [
+  ["off", "1000000"],
+  ["underscore", "1_000_000"],
+  ["comma", "1,000,000"],
+  ["space", "1 000 000"],
+];
+const SUGGEST_KEYWORDS = {
+  of: "50% of 300",
+  as: "10 as % of 50",
+  "in": "convert: 5 km in miles",
+  to: "convert: 5 km to miles",
+  total: "sum of the lines above",
+  sum: "sum of the lines above",
+  until: "days until 2026-12-31",
+  since: "days since 2026-01-01",
+};
+const SUGGEST_FUNC_DESC = {
+  sqrt: "square root", abs: "absolute value", floor: "round down",
+  ceil: "round up", log: "natural logarithm", log2: "base-2 logarithm",
+  log10: "base-10 logarithm", sin: "sine, radians", cos: "cosine, radians",
+  tan: "tangent, radians", asin: "inverse sine", acos: "inverse cosine",
+  atan: "inverse tangent", exp: "e to the power x",
+  round: "round(x) or round(x, digits)", min: "smallest argument",
+  max: "largest argument",
+};
+const SUGGEST_CONST_DESC = { pi: "3.14159...", e: "2.71828...", tau: "2 * pi" };
+const SUGGEST_KIND_RANK = { variable: 0, constant: 1, function: 2, keyword: 3, unit: 4 };
+const MAX_SUGGESTIONS = 12;
+const IDENT_RE = /[A-Za-z_]\w*$/;
+const ASSIGN_RE = /^\s*([A-Za-z_]\w*)\s*=/;
+const SUGGEST_RATE_RE = /^\s*@rate\s+(\w+)\s*\/\s*(\w+)\s*=/i;
+
+// Where the caret goes after the text is inserted. "sqrt()" puts it between the
+// parentheses; "fixed(2)" selects the 2 so that typing replaces it.
+function _cursorFor(insert) {
+  const m = insert.match(/\((\d*)\)$/);
+  if (!m) return [insert.length, insert.length];
+  const start = insert.length - 1 - m[1].length;
+  return [start, start + m[1].length];
+}
+
+function _item(name, insert, desc, kind) {
+  return { name, insert, desc, kind, cursor: _cursorFor(insert) };
+}
+
+// Variables assigned on the lines above the caret, newest value wins.
+function _docVars(head, values) {
+  const found = new Map();
+  for (const line of head.split("\n")) {
+    if (/^\s*[@#]/.test(line)) continue;
+    const m = line.match(ASSIGN_RE);
+    if (m) found.set(m[1].toLowerCase(), true);
+  }
+  const out = [];
+  for (const name of found.keys()) {
+    out.push(_item(name, name, values[name] || "variable", "variable"));
+  }
+  return out;
+}
+
+// Currency codes named by the @rate lines above the caret.
+function _rateCurrencies(head) {
+  const out = new Set();
+  for (const line of head.split("\n")) {
+    const m = line.match(SUGGEST_RATE_RE);
+    if (m) { out.add(m[1].toLowerCase()); out.add(m[2].toLowerCase()); }
+  }
+  return out;
+}
+
+function _pick(cands, prefix, caret, force) {
+  const start = caret - prefix.length;
+  if (!prefix && !force) return { items: [], start, end: caret };
+  const p = prefix.toLowerCase();
+  const seen = new Set();
+  const items = [];
+  for (const c of cands) {
+    if (seen.has(c.name) || !c.name.toLowerCase().startsWith(p)) continue;
+    seen.add(c.name);
+    items.push(c);
+  }
+  items.sort((a, b) =>
+    (SUGGEST_KIND_RANK[a.kind] ?? 9) - (SUGGEST_KIND_RANK[b.kind] ?? 9)
+    || a.name.length - b.name.length
+    || (a.name < b.name ? -1 : 1));
+  return { items: items.slice(0, MAX_SUGGESTIONS), start, end: caret };
+}
+
+// Unit names of one dimension, or of every dimension when dim is null. With no
+// prefix to narrow the list down, aliases of the same unit collapse into one
+// row so that the whole dimension stays visible.
+function _unitItems(dim, prefix) {
+  const names = Object.keys(UNIT_LOOKUP).filter(n => !dim || UNIT_LOOKUP[n][0] === dim);
+  if (prefix) return names.map(n => _item(n, n, UNIT_LOOKUP[n][0], "unit"));
+  const groups = new Map();
+  for (const n of names) {
+    const key = UNIT_LOOKUP[n][0] + ":" + UNIT_LOOKUP[n][1];
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(n);
+  }
+  const out = [];
+  for (const group of groups.values()) {
+    const short = group.reduce((a, b) => (b.length < a.length ? b : a));
+    // The dimension is only worth showing when the list mixes dimensions.
+    const parts = (dim ? [] : [UNIT_LOOKUP[short][0]]).concat(group.filter(n => n !== short));
+    out.push(_item(short, short, parts.join(", ") || UNIT_LOOKUP[short][0], "unit"));
+  }
+  return out;
+}
+
+/**
+ * Suggestions for the caret position. Pure: no DOM, no engine state.
+ * `values` maps a lower-case variable name to its rendered value, for the
+ * description column only. `force` shows the whole list on an empty word.
+ * Returns { items, start, end }; replace text[start..end) with item.insert.
+ */
+function suggest(text, caret, force, values) {
+  values = values || {};
+  const none = { items: [], start: caret, end: caret };
+  const lineStart = text.lastIndexOf("\n", caret - 1) + 1;
+  const before = text.slice(lineStart, caret);
+  if (/^\s*#/.test(before)) return none;
+  const head = text.slice(0, lineStart);
+
+  let m = before.match(/^\s*@format\s*=\s*(\w*)$/i);
+  if (m) return _pick(SUGGEST_FORMATS.map(([n, i, d]) => _item(n, i, d, "value")), m[1], caret, force);
+
+  m = before.match(/^\s*@separator\s*=\s*(\w*)$/i);
+  if (m) return _pick(SUGGEST_SEPARATORS.map(([n, d]) => _item(n, n, d, "value")), m[1], caret, force);
+
+  m = before.match(/^\s*@(\w*)$/);
+  if (m) return _pick(SUGGEST_DIRECTIVES.map(([n, i, d]) => _item(n, i, d, "value")), "@" + m[1], caret, force);
+
+  // "<unit> in|to <unit>" -- offer only targets that can be converted to.
+  m = before.match(/\b(?:in|to)\s+(\w*)$/i);
+  if (m) {
+    const lhs = ((before.slice(0, before.length - m[0].length).match(/(\w+)\s*$/) || [])[1] || "").toLowerCase();
+    const currencies = _rateCurrencies(head);
+    const cands = [];
+    if (currencies.has(lhs)) {
+      for (const c of currencies) if (c !== lhs) cands.push(_item(c, c, "currency", "unit"));
+    } else {
+      const dim = UNIT_LOOKUP[lhs] ? UNIT_LOOKUP[lhs][0] : null;
+      cands.push(..._unitItems(dim, m[1]));
+      if (!dim) for (const c of currencies) cands.push(_item(c, c, "currency", "unit"));
+    }
+    if (cands.length) return _pick(cands, m[1], caret, force);
+  }
+
+  const w = before.match(IDENT_RE);
+  const prefix = w ? w[0] : "";
+  const cands = _docVars(head, values);
+  for (const c of Object.keys(BUILTIN_CONSTS)) cands.push(_item(c, c, SUGGEST_CONST_DESC[c] || "constant", "constant"));
+  for (const f of BUILTIN_FUNC_NAMES) cands.push(_item(f, f + "()", SUGGEST_FUNC_DESC[f] || "function", "function"));
+  for (const [k, d] of Object.entries(SUGGEST_KEYWORDS)) cands.push(_item(k, k, d, "keyword"));
+  for (const k of DATE_KEYWORDS) cands.push(_item(k, k, "date", "keyword"));
+  for (const u of DURATION_UNITS) cands.push(_item(u, u, "duration", "keyword"));
+  // Units are the largest group, so they need a prefix to narrow them down.
+  if (prefix) for (const name of Object.keys(UNIT_LOOKUP)) cands.push(_item(name, name, UNIT_LOOKUP[name][0], "unit"));
+  return _pick(cands, prefix, caret, force);
+}
+// END CALCED SUGGEST
+
+// --- Autocomplete popup ---
+const acEl = document.getElementById("ac");
+const editorWrap = document.querySelector(".editor-wrap");
+let acItems = [];
+let acIdx = 0;
+let acStart = 0;
+let acEnd = 0;
+
+function acClose() {
+  acEl.hidden = true;
+  acItems = [];
+}
+
+// The caret in pixels, measured on the #highlight mirror. It has the same font,
+// padding and line height as the textarea, so a Range over it is exact.
+function acCaretRect() {
+  const caret = input.selectionStart;
+  const text = input.value;
+  const lineStart = text.lastIndexOf("\n", caret - 1) + 1;
+  const el = highlight.children[text.slice(0, lineStart).split("\n").length - 1];
+  if (!el) return input.getBoundingClientRect();
+  const col = caret - lineStart;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let seen = 0;
+  let node;
+  while ((node = walker.nextNode())) {
+    const len = node.nodeValue.length;
+    if (seen + len >= col) {
+      const range = document.createRange();
+      range.setStart(node, col - seen);
+      range.collapse(true);
+      const r = range.getBoundingClientRect();
+      if (r.width || r.height) return r;
+      break;
+    }
+    seen += len;
+  }
+  return el.getBoundingClientRect();
+}
+
+function acPlace() {
+  const r = acCaretRect();
+  const wrap = editorWrap.getBoundingClientRect();
+  if (r.bottom < wrap.top || r.top > wrap.bottom) return acClose();  // caret scrolled away
+  const h = acEl.offsetHeight;
+  const w = acEl.offsetWidth;
+  let top = r.bottom + 4;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
+  acEl.style.top = top + "px";
+  acEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+}
+
+function acUpdate(force) {
+  if (document.activeElement !== input || input.selectionStart !== input.selectionEnd) return acClose();
+  const res = suggest(input.value, input.selectionStart, !!force, lastVarValues);
+  if (!res.items.length) return acClose();
+  acItems = res.items;
+  acStart = res.start;
+  acEnd = res.end;
+  acIdx = 0;
+  acEl.innerHTML = acItems.map((it, i) =>
+    '<div class="ac-item' + (i ? '' : ' sel') + '" data-i="' + i + '">'
+    + '<span>' + escapeHTML(it.name) + '</span>'
+    + '<span class="ac-desc">' + escapeHTML(it.desc) + '</span></div>').join("");
+  acEl.hidden = false;
+  acEl.scrollTop = 0;
+  acPlace();
+}
+
+function acMove(step) {
+  acEl.children[acIdx].classList.remove("sel");
+  acIdx = (acIdx + step + acItems.length) % acItems.length;
+  acEl.children[acIdx].classList.add("sel");
+  acEl.children[acIdx].scrollIntoView({ block: "nearest" });
+}
+
+function acAccept() {
+  const it = acItems[acIdx];
+  const base = acStart;
+  const text = input.value;
+  acClose();
+  input.value = text.slice(0, acStart) + it.insert + text.slice(acEnd);
+  render();  // render() may rewrite input.value, so set the caret after it
+  input.selectionStart = base + it.cursor[0];
+  input.selectionEnd = base + it.cursor[1];
+  if (it.insert.endsWith(" = ")) acUpdate(true);  // "@format = " offers its values
+}
+
+input.addEventListener("input", () => acUpdate(false));
+input.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key === " ") { e.preventDefault(); acUpdate(true); return; }
+  if (acEl.hidden) return;
+  if (e.key === "ArrowDown") { e.preventDefault(); acMove(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); acMove(-1); }
+  else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); acAccept(); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); acClose(); }
+  else if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") acClose();
+});
+input.addEventListener("blur", acClose);
+input.addEventListener("click", acClose);
+const acFollow = () => { if (!acEl.hidden) acPlace(); };
+editorWrap.addEventListener("scroll", acFollow);
+window.addEventListener("resize", acFollow);
+acEl.addEventListener("mousedown", e => e.preventDefault());  // keep the caret
+acEl.addEventListener("click", e => {
+  const row = e.target.closest(".ac-item");
+  if (!row) return;
+  acIdx = +row.dataset.i;
+  acAccept();
+  input.focus();
+});
 
 // --- URL Hash Encoding ---
 let hashTimer = null;

@@ -47,6 +47,7 @@ def test_py(c):
 def test_js(c):
     """Run the JavaScript tests."""
     c.run("node web/test.mjs")
+    c.run("node web/test-suggest.mjs")
 
 
 @task

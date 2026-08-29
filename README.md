@@ -14,7 +14,7 @@ Spreadsheets are overkill for quick calculations. REPLs lose context once you cl
 
 Compared to other notepad calculators:
 
-- **Tiny, no dependencies** — the CLI is a single 47KB Python file (stdlib only), the web app is a single 52KB HTML file. No build step, no node_modules, no Electron.
+- **Tiny, no dependencies** — the CLI is a single 51KB Python file (stdlib only), the web app is a single 74KB HTML file. No build step, no node_modules, no Electron.
 - **Works offline** — both versions run entirely locally. Save the HTML file or install the CLI and you're set.
 - **Both CLI and web** — same syntax, same test suite, but well adapted to each environment.
 - **Stable results** — shared web URLs include the major version, so they won't break on updates. Files store results inline. All configuration is inside the documents.
@@ -22,6 +22,12 @@ Compared to other notepad calculators:
 ## Web
 
 [Open the web app](https://sjev.github.io/calced) in a browser.
+
+The web app suggests names as you type: your own variables (with their current
+value), functions, constants, units, keywords and directives. Press `Ctrl+Space`
+to see every name that fits the position, for example each unit you can convert
+to after `5 km in `. Use the arrow keys to choose, `Enter` or `Tab` to accept,
+and `Esc` to dismiss.
 
 ## CLI
 
