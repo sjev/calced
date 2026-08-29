@@ -122,6 +122,53 @@ def _version() -> str:
     return tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
 
 
+@task
+def version(c):
+    """Print the current version."""
+    print(_version())
+
+
+# (file, pattern, replacement) for every file that shows the version. `{v}` is the new one.
+# pyproject.toml is the source of truth; the web app has no build step, so the string is
+# written into it here.
+VERSION_PATTERNS = [
+    ("pyproject.toml", r'^version = ".*"$', 'version = "{v}"'),
+    ("web/index.html", r'class="ver">v[\d.]*<', 'class="ver">v{v}<'),
+]
+
+
+@task(help={"part": "patch, minor or major"})
+def bump(c, part):
+    """Bump the version in every file and commit the change."""
+    if part not in ("patch", "minor", "major"):
+        raise SystemExit("Usage: inv bump <patch|minor|major>")
+
+    if c.run("git status --porcelain", hide=True).stdout.strip():
+        raise SystemExit("Working tree is dirty. Commit or stash changes first.")
+
+    old = _version()
+    major, minor, patch = (int(x) for x in old.split("."))
+    if part == "major":
+        major, minor, patch = major + 1, 0, 0
+    elif part == "minor":
+        minor, patch = minor + 1, 0
+    else:
+        patch += 1
+    new = f"{major}.{minor}.{patch}"
+
+    for name, pattern, replacement in VERSION_PATTERNS:
+        path = Path(name)
+        text = path.read_text()
+        new_text, count = re.subn(pattern, replacement.format(v=new), text, flags=re.MULTILINE)
+        if count == 0:
+            raise SystemExit(f"Error: no match for {pattern!r} in {name}")
+        path.write_text(new_text)
+
+    files = " ".join(name for name, _, _ in VERSION_PATTERNS)
+    c.run(f'git commit -m "Bump version: {old} -> {new}" {files}')
+    print(f"Bumped {old} -> {new}")
+
+
 REDIRECT_HTML = """<!DOCTYPE html>
 <html>
 <head>
@@ -175,19 +222,14 @@ def release_python(c):
 
 @task
 def release(c):
-    """Test, tag and publish a new release."""
+    """Test and publish the current version. Use `inv bump` first."""
     test(c)
     readme(c)
     if c.run("git status --porcelain", hide=True).stdout.strip():
         raise SystemExit("Error: working directory is dirty. Commit changes first.")
 
-    tag = f"v{_version()}"
-    if c.run(f"git rev-parse {tag}", hide=True, warn=True).ok:
-        raise SystemExit(f"Error: tag {tag} already exists. Bump version in pyproject.toml.")
-
-    print(f"Releasing {tag}...")
-    c.run(f"git tag {tag}")
+    print(f"Releasing v{_version()}...")
     release_python(c)
     deploy_web(c)
-    c.run(f"git push origin master {tag}")
-    print(f"Released {tag}")
+    c.run("git push origin master")
+    print(f"Released v{_version()}")
