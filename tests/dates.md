@@ -27,7 +27,7 @@ deadline - 2025-06-15                   # => 14
 2025-01-15 + 3 days                     # => 2025-01-18 │
 100                                     # => 100        │
 200                                     # => 200        │
-total                                   # => 300        ┘
+sum()                                   # => 300        ┘
 
 # Trailing Text After a Date Expression
 
