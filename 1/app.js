@@ -1,17 +1,22 @@
-// DOM wiring: render loop, docs panel, autocomplete popup, URL hash, export.
+// DOM wiring: render loop, file menu, docs panel, autocomplete popup, share link, copy.
 import {
   processText, highlightLine, escapeHTML,
   RESULT_RE, splitSections, computeTotalIndicators, alignDecimalPoints,
 } from "./document.js";
 import { suggest, ASSIGN_RE } from "./suggest.js";
+import * as store from "./store.js";
+import { shareLink, readShared } from "./share.js";
 
 // --- UI Wiring ---
 const input = document.getElementById("input");
 const results = document.getElementById("results");
 const highlight = document.getElementById("highlight");
 const shareBtn = document.getElementById("share-btn");
+const copyBtn = document.getElementById("copy-btn");
 const docsBtn = document.getElementById("docs-btn");
 const cheatsheet = document.getElementById("cheatsheet");
+const fileBtn = document.getElementById("file-btn");
+const fileMenu = document.getElementById("file-menu");
 let lastVarValues = {};  // lower-case variable name -> rendered value, for autocomplete
 
 // --- Docs Panel ---
@@ -59,6 +64,98 @@ try {
   }
 } catch(e) {}
 
+// --- File Menu ---
+function activeName() {
+  return store.getActive().name;
+}
+
+function updateFileLabel() {
+  const name = activeName();
+  fileBtn.textContent = (name === null ? "Untitled *" : name) + " \u25BE";
+}
+
+function renderFileMenu() {
+  const name = activeName();
+  const rows = store.listFiles().map(f =>
+    '<button data-file="' + escapeHTML(f) + '"' + (f === name ? ' class="active"' : '') +
+    '>' + escapeHTML(f) + '</button>'
+  ).join("");
+  fileMenu.innerHTML =
+    '<button data-action="new">New</button>' +
+    '<button data-action="rename">' + (name === null ? "Save as\u2026" : "Rename\u2026") + '</button>' +
+    '<button data-action="duplicate">Duplicate</button>' +
+    (name === null ? '' : '<button data-action="delete">Delete</button>') +
+    (rows ? '<div class="menu-label">saved</div>' + rows : '');
+}
+
+function closeFileMenu() {
+  fileMenu.hidden = true;
+}
+
+function flushSave() {
+  clearTimeout(saveTimer);
+  store.saveActive(input.value);
+}
+
+function switchTo(name, text) {
+  flushSave();
+  store.setActive(name);
+  input.value = text;
+  render();
+  updateFileLabel();
+  closeFileMenu();
+  input.focus();
+}
+
+function askName(base) {
+  const name = (prompt("File name:", base) || "").trim();
+  if (!name) return null;
+  if (store.readFile(name) !== null && !confirm('Replace "' + name + '"?')) return null;
+  return name;
+}
+
+function fileAction(action) {
+  const name = activeName();
+  if (action === "new") {
+    switchTo(null, "");
+  } else if (action === "rename") {
+    const to = askName(name === null ? store.uniqueName("Untitled") : name);
+    if (!to) return;
+    if (name !== null && !store.renameFile(name, to)) store.deleteFile(name);
+    store.writeFile(to, input.value);
+    switchTo(to, input.value);
+  } else if (action === "duplicate") {
+    const to = askName(store.uniqueName((name === null ? "Untitled" : name) + " copy"));
+    if (!to) return;
+    store.writeFile(to, input.value);
+    switchTo(to, input.value);
+  } else if (action === "delete") {
+    if (name === null || !confirm('Delete "' + name + '"?')) return;
+    store.deleteFile(name);
+    const next = store.listFiles()[0];
+    switchTo(next === undefined ? null : next, next === undefined ? "" : store.readFile(next));
+  }
+}
+
+fileBtn.addEventListener("click", e => {
+  e.stopPropagation();
+  if (fileMenu.hidden) renderFileMenu();
+  fileMenu.hidden = !fileMenu.hidden;
+  input.focus();  // keep the caret in the editor: typing then closes the menu
+});
+
+fileMenu.addEventListener("click", e => {
+  const el = e.target.closest("[data-action], [data-file]");
+  if (!el) return;
+  closeFileMenu();
+  if (el.dataset.action) fileAction(el.dataset.action);
+  else switchTo(el.dataset.file, store.readFile(el.dataset.file));
+});
+
+document.addEventListener("click", e => {
+  if (!fileMenu.hidden && !e.target.closest("#file-menu, #file-btn")) closeFileMenu();
+});
+
 function render() {
   const text = input.value;
   const cleaned = text.split("\n").map(l => l.replace(RESULT_RE, "")).join("\n");
@@ -88,14 +185,18 @@ function render() {
   for (let i = 0; i < hlLines.length && i < resLines.length; i++) {
     resLines[i].style.height = hlLines[i].getBoundingClientRect().height + 'px';
   }
-  scheduleHashUpdate();
-  try { localStorage.setItem("calced-input", text); } catch(e) {}
+  scheduleSave();
   const heading = lines.find(l => l.trim().startsWith("#"));
   document.title = heading ? heading.replace(/^#+ */, "").trim() + " - calced" : "calced";
 }
 
 input.addEventListener("input", render);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !cheatsheet.hidden) toggleDocs(); });
+// Capture phase: any key closes the file menu, even when the autocomplete popup
+// stops the Escape key from bubbling.
+document.addEventListener("keydown", e => {
+  if (!fileMenu.hidden) { closeFileMenu(); return; }
+  if (e.key === "Escape" && !cheatsheet.hidden) toggleDocs();
+}, true);
 
 // --- Line hover highlight ---
 let hoveredIdx = -1;
@@ -245,60 +346,11 @@ acEl.addEventListener("click", e => {
   input.focus();
 });
 
-// --- URL Hash Encoding ---
-let hashTimer = null;
-function scheduleHashUpdate() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => updateHash(), 300);
-}
-
-async function compressText(text) {
-  if (typeof CompressionStream === "undefined") {
-    return "b64." + btoa(unescape(encodeURIComponent(text)));
-  }
-  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("deflate-raw"));
-  const buf = await new Response(stream).arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-async function decompressText(hash) {
-  if (hash.startsWith("b64.")) {
-    return decodeURIComponent(escape(atob(hash.slice(4))));
-  }
-  const binary = atob(hash.replace(/-/g, "+").replace(/_/g, "/"));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  if (typeof DecompressionStream === "undefined") {
-    return decodeURIComponent(escape(atob(hash)));
-  }
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return await new Response(stream).text();
-}
-
-async function updateHash() {
-  const text = input.value;
-  if (!text) { history.replaceState(null, "", location.pathname); return; }
-  const encoded = await compressText(text);
-  history.replaceState(null, "", "#" + encoded);
-}
-
-async function loadFromHash() {
-  const hash = location.hash.slice(1);
-  if (!hash) return false;
-  if (hash === "new") {
-    history.replaceState(null, "", location.pathname);
-    return true;
-  }
-  try {
-    input.value = await decompressText(hash);
-    render();
-  } catch (e) {
-    console.error("Failed to decode URL hash:", e);
-  }
-  return true;
+// --- Persistence ---
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => store.saveActive(input.value), 300);
 }
 
 function formatForFile(text) {
@@ -336,22 +388,18 @@ function formatForFile(text) {
   return formatted.join("\n");
 }
 
-function downloadFile() {
+function copyText() {
   const text = input.value;
   if (!text.trim()) return;
-  const content = formatForFile(text);
-  const blob = new Blob([content + "\n"], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const heading = text.split("\n").find(l => l.trim().startsWith("#"));
-  a.download = (heading ? heading.replace(/^#+ */, "").trim() : "calced") + ".txt";
-  a.href = url;
-  a.click();
-  URL.revokeObjectURL(url);
+  navigator.clipboard.writeText(formatForFile(text) + "\n").then(() => {
+    copyBtn.classList.add("copied");  // icon button: show the result with color only
+    setTimeout(() => copyBtn.classList.remove("copied"), 1500);
+  });
 }
 
-function shareURL() {
-  navigator.clipboard.writeText(location.href).then(() => {
+async function shareURL() {
+  const url = await shareLink(input.value);
+  navigator.clipboard.writeText(url).then(() => {
     shareBtn.textContent = "Link copied!";
     shareBtn.classList.add("copied");
     setTimeout(() => { shareBtn.textContent = "Share"; shareBtn.classList.remove("copied"); }, 1500);
@@ -359,7 +407,7 @@ function shareURL() {
 }
 
 shareBtn.addEventListener("click", shareURL);
-document.getElementById("download-btn").addEventListener("click", downloadFile);
+copyBtn.addEventListener("click", copyText);
 
 const WELCOME = `Write math anywhere. Results appear on the right.
 
@@ -381,16 +429,19 @@ after_tax = income - tax
 5 km in miles
 100 C in F
 
-Try editing these lines, or click New for a blank sheet.
+Try editing these lines, or use the file menu for a blank sheet.
 Click Docs for more features (functions, formatting, etc.)
 `;
 
-loadFromHash().then((hadHash) => {
-  if (!input.value && !hadHash) {
-    try {
-      const saved = localStorage.getItem("calced-input");
-      if (saved) { input.value = saved; render(); }
-      else if (saved === null) { input.value = WELCOME; render(); }
-    } catch(e) {}
+readShared().then(shared => {
+  if (shared !== null) {
+    history.replaceState(null, "", location.pathname);
+    store.setActive(null);
+    input.value = shared;
+  } else {
+    const { name, text } = store.getActive();
+    input.value = text || (name === null && !store.listFiles().length ? WELCOME : "");
   }
+  render();
+  updateFileLabel();
 });
