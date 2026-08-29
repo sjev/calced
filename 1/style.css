@@ -9,6 +9,10 @@
   --result: #166534;
   --header-bg: #f0f0f0;
   --accent: #2563eb;
+  --hl-num: #fe640b;
+  --hl-func: #8839ef;
+  --hl-unit: #179299;
+  --hl-op: #1e66f5;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -20,6 +24,10 @@
     --result: #a6e3a1;
     --header-bg: #11111b;
     --accent: #89b4fa;
+    --hl-num: #fab387;
+    --hl-func: #cba6f7;
+    --hl-unit: #94e2d5;
+    --hl-op: #89b4fa;
   }
 }
 html, body { height: 100%; background: var(--bg); color: var(--text); font-family: monospace; }
@@ -84,6 +92,10 @@ header h1 a { color: inherit; text-decoration: none; }
 }
 .hl-dim { color: var(--dim); }
 .hl-comment { font-weight: bold; }
+.hl-num { color: var(--hl-num); }
+.hl-func { color: var(--hl-func); }
+.hl-unit { color: var(--hl-unit); }
+.hl-op { color: var(--hl-op); }
 #results {
   --pad: 16px;
   width: max-content; min-width: 10%; background: var(--surface);

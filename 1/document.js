@@ -11,6 +11,22 @@ const DIRECTIVE_RE = /^@(format|separator)\s*=\s*(.+)$/i;
 const FORMAT_RE = /^(minSig|fixed|scientific|eng|auto)(?:\((\d+)\))?$/i;
 const RATE_RE = /^@rate\s+(\w+)\/(\w+)\s*=\s*(.+)$/i;
 
+const TOKEN_ROLES = {
+  NUM: "num", PCT: "num", DATE: "num",
+  FUNC: "func", TOTAL: "func",
+  ADDOP: "op", MULOP: "op", POW: "op",
+  LPAREN: "op", RPAREN: "op", COMMA: "op", EQ: "op",
+};
+
+// Highlight role of one token. Ignored text is dim whatever its type.
+function _spanRole(token, isActive, inConv) {
+  if (!isActive) return "dim";
+  if (inConv) return "unit";
+  return TOKEN_ROLES[token[0]] || "text";
+}
+
+// Returns "blank", "comment", "directive", or a list of [start, end, role]
+// spans. The role is one of "dim", "unit", "num", "func", "op" or "text".
 function classifyLine(text, variables, rates) {
   const stripped = text.trim();
   if (!stripped) return "blank";
@@ -34,6 +50,7 @@ function classifyLine(text, variables, rates) {
   );
 
   const active = new Set();
+  let convStart = 0, convEnd = 0;
 
   if (hasDate && hasMath) {
     // A date expression is active as a whole
@@ -60,8 +77,9 @@ function classifyLine(text, variables, rates) {
       }
 
       const conv = _detectConversion(tokens, rates);
-      const [conversion, convStart, convEnd] = conv;
+      const [conversion] = conv;
       if (conversion !== null) {
+        [, convStart, convEnd] = conv;
         for (let ci = convStart; ci < convEnd; ci++) active.add(ci);
       }
 
@@ -90,11 +108,11 @@ function classifyLine(text, variables, rates) {
     const t = tokens[i];
     if (t[0] === "EOF") break;
     const start = t[2], end = t[3];
-    if (start > pos) spans.push([pos, start, true]);
-    spans.push([start, end, !active.has(i)]);
+    if (start > pos) spans.push([pos, start, "dim"]);
+    spans.push([start, end, _spanRole(t, active.has(i), i >= convStart && i < convEnd)]);
     pos = end;
   }
-  if (pos < text.length) spans.push([pos, text.length, true]);
+  if (pos < text.length) spans.push([pos, text.length, "dim"]);
   return spans;
 }
 
@@ -107,9 +125,9 @@ function highlightLine(text, cls) {
   if (cls === "comment") return '<span class="hl-comment">' + escapeHTML(text) + '</span>';
   if (cls === "directive") return '<span class="hl-dim">' + escapeHTML(text) + '</span>';
   let html = "";
-  for (const [start, end, dim] of cls) {
+  for (const [start, end, role] of cls) {
     const chunk = escapeHTML(text.substring(start, end));
-    html += dim ? '<span class="hl-dim">' + chunk + '</span>' : chunk;
+    html += role === "text" ? chunk : '<span class="hl-' + role + '">' + chunk + '</span>';
   }
   return html;
 }
