@@ -15,12 +15,17 @@ Spreadsheets are overkill for quick calculations. REPLs lose context once you cl
 Compared to other notepad calculators:
 
 - **Tiny, no dependencies** — the CLI is a single 54KB Python file (stdlib only), the web app is ~83KB of plain ES modules. No build step, no node_modules, no Electron.
-- **Works offline** — all calculation is local. The CLI makes no network calls. The
-  web app counts anonymous pageviews with a self-hosted [Umami](https://umami.is)
-  instance: no cookies, no personal data, and your document never leaves the browser.
-  Block it if you prefer; the app is fully functional offline.
+- **Works offline** — all calculation is local. 
 - **Both CLI and web** — same syntax, same test suite, but well adapted to each environment.
-- **Stable results** — shared web URLs include the major version, so they won't break on updates. Files store results inline. All configuration is inside the documents.
+
+## Privacy
+
+Your document stays in the browser. Calculation is local, and a shared link holds the text in the URL itself.
+
+The web app page counts anonymous pageviews with a self-hosted Umami instance. It sets no cookies and keeps no personal data.
+
+If you like to host yourself, just remove page counter script from `index.html`
+
 
 ## Web
 
