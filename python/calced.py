@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""calced - a notepad calculator that updates files with results."""
+"""calced - a notepad calculator that updates files with results.
+
+A fork of https://github.com/karlb/calced by Karl Bartel (MIT).
+"""
 
 import argparse
 import base64
@@ -16,6 +19,9 @@ import sys
 import time
 import zlib
 from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
+
+SITE_URL = "https://sjev.github.io/calced"
+REPO_URL = "https://github.com/sjev/calced"
 
 RESULT_RE = re.compile(r"\s+# => .*$")
 DIRECTIVE_RE = re.compile(r"^@(format|separator)\s*=\s*(.+)$", re.IGNORECASE)
@@ -1474,7 +1480,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="calced",
         description="A notepad calculator that evaluates expressions in text files. Updates the input file in-place with results.",
-        epilog="examples:\n  calced expenses.txt        evaluate and update file in-place\n  calced -s expenses.txt     print results to stdout\n  calced -w expenses.txt     watch file and re-evaluate on changes\n\ndocs & issues: https://github.com/karlb/calced",
+        epilog=f"examples:\n  calced expenses.txt        evaluate and update file in-place\n  calced -s expenses.txt     print results to stdout\n  calced -w expenses.txt     watch file and re-evaluate on changes\n\ndocs & issues: {REPO_URL}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {_get_version()}")
@@ -1535,7 +1541,7 @@ def main():
         encoded = base64.b64encode(compressed).decode()
         encoded = encoded.replace("+", "-").replace("/", "_").rstrip("=")
         major = _get_version().split(".")[0]
-        print(f"https://calced.karl.berlin/{major}/#{encoded}")
+        print(f"{SITE_URL}/{major}/#{encoded}")
         return
 
     if args.json:

@@ -2,6 +2,7 @@
 """Automation tasks. Run `inv -l` for the list."""
 
 import glob
+import re
 import shutil
 from pathlib import Path
 from tempfile import mkdtemp
@@ -10,7 +11,8 @@ import tomllib
 from invoke import task
 
 SOURCES = "python tests tasks.py"
-SITE_URL = "https://calced.karl.berlin"
+SITE_URL = "https://sjev.github.io/calced"
+REPO_URL = "https://github.com/sjev/calced"
 
 
 @task
@@ -78,6 +80,36 @@ def ci(c):
 def readme(c):
     """Regenerate README.md from its inline examples."""
     c.run("uv run cog -r README.md")
+
+
+# (file, pattern, replacement). The pattern must match whatever value is there now,
+# so a later URL change needs an edit here only.
+URL_PATTERNS = [
+    ("python/calced.py", r'^SITE_URL = ".*"$', f'SITE_URL = "{SITE_URL}"'),
+    ("python/calced.py", r'^REPO_URL = ".*"$', f'REPO_URL = "{REPO_URL}"'),
+    ("pyproject.toml", r'^Homepage = ".*"$', f'Homepage = "{SITE_URL}"'),
+    ("pyproject.toml", r'^Repository = ".*"$', f'Repository = "{REPO_URL}"'),
+    ("pyproject.toml", r'^Issues = ".*"$', f'Issues = "{REPO_URL}/issues"'),
+    ("web/index.html", r'"og:image" content=".*"', f'"og:image" content="{SITE_URL}/og.png"'),
+    ("web/index.html", r'"og:url" content=".*"', f'"og:url" content="{SITE_URL}"'),
+    ("web/index.html", r'href="[^"]*#features"', f'href="{REPO_URL}#features"'),
+    ("README.md", r"\[Open the web app\]\(.*\)", f"[Open the web app]({SITE_URL})"),
+]
+
+
+@task
+def sync_urls(c):
+    """Write SITE_URL and REPO_URL into every file that shows them."""
+    for name, pattern, replacement in URL_PATTERNS:
+        path = Path(name)
+        text = path.read_text()
+        new_text, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)
+        if count == 0:
+            raise SystemExit(f"Error: no match for {pattern!r} in {name}")
+        if new_text != text:
+            path.write_text(new_text)
+            print(f"updated {name}")
+    readme(c)  # the "Try in web app" links come from `calced.py --url`
 
 
 @task

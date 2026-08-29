@@ -11,6 +11,9 @@ import unittest
 here = os.path.dirname(os.path.abspath(__file__))
 calced = os.path.join(here, "..", "python", "calced.py")
 
+sys.path.insert(0, os.path.join(here, "..", "python"))
+from calced import SITE_URL  # noqa: E402
+
 
 def run(args, stdin=None):
     """Run calced.py with the given arguments."""
@@ -95,7 +98,7 @@ class TestUrl(unittest.TestCase):
     def test_prints_url(self):
         r = run(["--url", os.path.join(here, "basic_arithmetic.md")])
         self.assertEqual(r.returncode, 0)
-        self.assertTrue(r.stdout.strip().startswith("https://calced.karl.berlin/"))
+        self.assertTrue(r.stdout.strip().startswith(SITE_URL + "/"))
 
 
 class TestStdin(unittest.TestCase):
