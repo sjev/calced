@@ -188,7 +188,7 @@ expressions in plain text. No install, works offline.">
 
 @task
 def deploy_web(c):
-    """Publish web/index.html to the gh-pages branch."""
+    """Publish the web/ directory to the gh-pages branch."""
     version = _version()
     major = version.split(".")[0]
     print(f"Deploying web app v{version} (major={major})")
@@ -201,8 +201,13 @@ def deploy_web(c):
         else:
             c.run(f"git worktree add --orphan -b gh-pages {tmp}")
 
-        Path(tmp, major).mkdir(exist_ok=True)
-        shutil.copy("web/index.html", Path(tmp, major, "index.html"))
+        # copytree, so that new modules ship without touching a list here
+        shutil.copytree(
+            "web",
+            Path(tmp, major),
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns("test*.mjs", "package.json", "og.png"),
+        )
         shutil.copy("web/og.png", Path(tmp, "og.png"))
         Path(tmp, "index.html").write_text(REDIRECT_HTML.format(major=major, site=SITE_URL))
         Path(tmp, ".nojekyll").touch()

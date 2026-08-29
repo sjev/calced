@@ -1,29 +1,9 @@
 #!/usr/bin/env node
 /**
  * Tests for the autocomplete suggestion function.
- * Extracts the engine and the suggest block from index.html. The suggest block
- * touches no DOM, so it runs in plain node.
+ * Imports the suggest module. It touches no DOM, so it runs in plain node.
  */
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(__dirname, "index.html"), "utf-8");
-
-function slice(start, end) {
-  const a = html.indexOf(start);
-  const b = html.indexOf(end);
-  if (a === -1 || b === -1) {
-    console.error(`Could not find markers ${start} / ${end} in index.html`);
-    process.exit(1);
-  }
-  return html.slice(a, b);
-}
-
-const src = slice("// -- CALCED ENGINE BEGIN --", "// END CALCED ENGINE")
-  + slice("// -- CALCED SUGGEST BEGIN --", "// END CALCED SUGGEST");
-const { suggest } = new Function(src + "\nreturn { suggest };")();
+import { suggest } from "./suggest.js";
 
 let failures = 0;
 function check(label, ok, extra) {
@@ -60,7 +40,9 @@ const names = (marked, force, values) => ask(marked, force, values).items.map(i 
 }
 
 // --- constants and keywords ---
-check("pi offered", names("2 * p|").includes("pi"));
+check("pi offered", names("2 * pi|").includes("pi"));
+check("one character is too short", names("2 * p|").length === 0, JSON.stringify(names("2 * p|")));
+check("one character still opens on force", names("2 * p|", true).includes("pi"));
 check("today offered", names("tod|").includes("today"));
 check("total offered", names("tot|").includes("total"));
 

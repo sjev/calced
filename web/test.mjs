@@ -1,34 +1,18 @@
 #!/usr/bin/env node
 /**
  * Test runner for the JS calced engine.
- * Extracts the engine from index.html and runs:
+ * Imports the engine modules and runs:
  *   1. Unit vectors from tests/classify_vectors.json and tests/evaluate_vectors.json
  *   2. Integration tests from tests/*.md
  */
 import { readFileSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { processText, classifyLine } from "./document.js";
+import { evaluateLine } from "./evaluate.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const htmlPath = join(__dirname, "index.html");
 const testsDir = join(__dirname, "..", "tests");
-
-// Extract JS engine from index.html between markers
-const html = readFileSync(htmlPath, "utf-8");
-const startMarker = "// -- CALCED ENGINE BEGIN --";
-const endMarker = "// END CALCED ENGINE";
-const startIdx = html.indexOf(startMarker);
-const endIdx = html.indexOf(endMarker);
-if (startIdx === -1 || endIdx === -1) {
-  console.error("Could not find engine markers in index.html");
-  process.exit(1);
-}
-const engineCode = html.slice(startIdx, endIdx);
-
-// Evaluate the engine code in a function scope and extract exports
-const wrappedCode = engineCode + "\nreturn { processText, evaluateLine, classifyLine, formatResult };";
-const engine = new Function(wrappedCode)();
-const { processText, evaluateLine, classifyLine } = engine;
 
 // --- Unit vector tests ---
 let unitFailures = 0;
