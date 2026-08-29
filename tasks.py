@@ -38,9 +38,10 @@ def lint(c):
 def test_py(c):
     """Run the Python unit tests and the .md integration tests."""
     c.run("uv run python -m unittest discover -s tests")
-    for path in sorted(glob.glob("tests/*.md")):
+    for path in sorted(glob.glob("tests/*.md")) + ["web/docs.md"]:
         c.run(f"uv run python python/calced.py {path}")
-    c.run("git diff --exit-code -- tests/*.md")  # the fixtures must not change
+    # the fixtures must not change; web/docs.md is the docs and a fixture at the same time
+    c.run("git diff --exit-code -- tests/*.md web/docs.md")
 
 
 @task
@@ -94,7 +95,6 @@ URL_PATTERNS = [
     ("pyproject.toml", r'^Issues = ".*"$', f'Issues = "{REPO_URL}/issues"'),
     ("web/index.html", r'"og:image" content=".*"', f'"og:image" content="{SITE_URL}/og.png"'),
     ("web/index.html", r'"og:url" content=".*"', f'"og:url" content="{SITE_URL}"'),
-    ("web/index.html", r'href="[^"]*#features"', f'href="{REPO_URL}#features"'),
     ("README.md", r"\[Open the web app\]\(.*\)", f"[Open the web app]({SITE_URL})"),
 ]
 
@@ -111,7 +111,7 @@ def sync_urls(c):
         if new_text != text:
             path.write_text(new_text)
             print(f"updated {name}")
-    readme(c)  # the "Try in web app" links come from `calced.py --url`
+    readme(c)  # the README reference block comes from web/docs.md
 
 
 @task

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Test CLI flags by invoking calced.py as a subprocess."""
 
+import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 
 here = os.path.dirname(os.path.abspath(__file__))
 calced = os.path.join(here, "..", "python", "calced.py")
@@ -96,9 +99,20 @@ class TestDryRun(unittest.TestCase):
 
 class TestUrl(unittest.TestCase):
     def test_prints_url(self):
-        r = run(["--url", os.path.join(here, "basic_arithmetic.md")])
+        path = os.path.join(here, "basic_arithmetic.md")
+        r = run(["--url", path])
         self.assertEqual(r.returncode, 0)
-        self.assertTrue(r.stdout.strip().startswith(SITE_URL + "/"))
+        url = r.stdout.strip()
+        self.assertTrue(url.startswith(SITE_URL + "/"))
+        # the web app reads the payload from ?data=, see web/share.js
+        self.assertIn("/?data=", url)
+        payload = url.split("?data=", 1)[1]
+        padded = payload.replace("-", "+").replace("_", "/")
+        padded += "=" * (-len(padded) % 4)
+        text = zlib.decompress(base64.b64decode(padded), wbits=-15).decode()
+        with open(path) as f:
+            expected = re.sub(r"\s+# => .*$", "", f.read(), flags=re.MULTILINE)
+        self.assertEqual(text, expected)
 
 
 class TestStdin(unittest.TestCase):

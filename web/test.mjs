@@ -3,10 +3,10 @@
  * Test runner for the JS calced engine.
  * Imports the engine modules and runs:
  *   1. Unit vectors from tests/classify_vectors.json and tests/evaluate_vectors.json
- *   2. Integration tests from tests/*.md
+ *   2. Integration tests from tests/*.md and web/docs.md
  */
 import { readFileSync, readdirSync } from "fs";
-import { join, dirname } from "path";
+import { basename, join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { processText, classifyLine } from "./document.js";
 import { evaluateLine } from "./evaluate.js";
@@ -64,10 +64,13 @@ let totalPassed = 0;
 let totalFailed = 0;
 let failedFiles = [];
 
-const files = readdirSync(testsDir).filter(f => f.endsWith(".md")).sort();
+const files = readdirSync(testsDir).filter(f => f.endsWith(".md")).sort()
+  .map(f => join(testsDir, f));
+files.push(join(__dirname, "docs.md"));  // the docs must hold in both engines
 
-for (const file of files) {
-  const content = readFileSync(join(testsDir, file), "utf-8");
+for (const path of files) {
+  const file = basename(path);
+  const content = readFileSync(path, "utf-8");
   const lines = content.split("\n");
   // Remove trailing empty line from split
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();

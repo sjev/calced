@@ -1640,7 +1640,7 @@ def main():
         encoded = base64.b64encode(compressed).decode()
         encoded = encoded.replace("+", "-").replace("/", "_").rstrip("=")
         major = _get_version().split(".")[0]
-        print(f"{SITE_URL}/{major}/#{encoded}")
+        print(f"{SITE_URL}/{major}/?data={encoded}")
         return
 
     if args.json:

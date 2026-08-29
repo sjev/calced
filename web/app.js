@@ -1,4 +1,4 @@
-// DOM wiring: render loop, file menu, docs panel, autocomplete popup, share link, copy.
+// DOM wiring: render loop, file menu, docs document, autocomplete popup, share link, copy.
 import {
   processText, highlightLine, escapeHTML,
   RESULT_RE, splitSections, computeTotalIndicators, alignDecimalPoints,
@@ -14,64 +14,58 @@ const highlight = document.getElementById("highlight");
 const shareBtn = document.getElementById("share-btn");
 const copyBtn = document.getElementById("copy-btn");
 const docsBtn = document.getElementById("docs-btn");
-const cheatsheet = document.getElementById("cheatsheet");
 const fileBtn = document.getElementById("file-btn");
 const fileMenu = document.getElementById("file-menu");
 let lastVarValues = {};  // lower-case variable name -> rendered value, for autocomplete
 
-// --- Docs Panel ---
-const EXAMPLES = {
-  basics: "2 + 3\n10 * (4 + 6)\n2 ^ 10\n17 % 5",
-  variables: "price = 100\nqty = 3\ntotal = price * qty\n\ntax_rate = 22%\ntax = total * tax_rate\nafter_tax = total - tax",
-  totals: "# Groceries\n\nbread 3.50\nmilk 2 * 1.20\neggs 4.95\nsum()\n\n# A heading starts a new total\n\n100\n200\nsubtotal = sum()\nsubtotal * 2",
-  pct: "50% of 300\n200 + 15%\n200 - 10%",
-  units: "5 km in miles\n100 C in F\n1 gib in mib\n60 min in hr\n1 gal in l",
-  funcs: "sqrt(16)\nround(3.14159, 2)\nmin(5, 2, 8)\nmax(1, 9, 3)\nlog10(1000)",
-  fmt: "1000000\n\n@format = fixed(2)\n1000000\n\n@format = scientific\n1000000\n\n@format = eng\n1000000\n\n@separator = comma\n@format = minSig(3)\n1000000",
-  dates: "date()\nnow()\ndate() + 2 weeks\n\n# Deadline\ndeadline = 2026-12-31\ndays until deadline\n\n# Date math\n2025-01-31 + 1 month\n2025-03-01 - 2025-01-01\n\n# Times\nnow() + 3 hours\n2025-01-15 18:00 - 2025-01-15 09:00",
-  rates: "@rate USD/EUR = 0.92\n100 USD in EUR\n50 EUR in USD\n\n@rate BTC/USD = 97500\n0.5 BTC in USD",
-};
+// --- Docs ---
+// The docs document loads into the editor. It stays editable, so the reader can try
+// changes, but nothing about it is stored.
+let docsText = null;
+let docsMode = false;
+let prevDoc = null;
 
-function toggleDocs() {
-  const show = cheatsheet.hidden;
-  cheatsheet.hidden = !show;
-  docsBtn.innerHTML = show ? "Docs &#x25B4;" : "Docs &#x25BE;";
-  try { localStorage.setItem("calced-docs", show ? "1" : "0"); } catch(e) {}
+async function loadDocs() {
+  if (docsText === null) docsText = await fetch("docs.md").then(r => r.text());
+  return docsText;
 }
 
-function tryExample(key) {
-  const text = EXAMPLES[key];
-  if (!text) return;
-  if (input.value.trim() && !confirm("Replace editor content with example?")) return;
+async function openDocs() {
+  let text;
+  try {
+    text = await loadDocs();
+  } catch (e) {
+    console.error("Failed to load docs.md", e);
+    return;
+  }
+  flushSave();
+  prevDoc = { name: activeName(), text: input.value };
+  docsMode = true;
   input.value = text;
   render();
-  cheatsheet.hidden = true;
-  docsBtn.innerHTML = "Docs &#x25BE;";
-  try { localStorage.setItem("calced-docs", "0"); } catch(e) {}
+  updateFileLabel();
+  docsBtn.textContent = "Close docs";
   input.focus();
 }
 
-docsBtn.addEventListener("click", toggleDocs);
-cheatsheet.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-example]");
-  if (el) tryExample(el.dataset.example);
-});
+function closeDocs() {
+  const { name, text } = prevDoc;
+  switchTo(name, text);
+}
 
-try {
-  if (localStorage.getItem("calced-docs") === "1") {
-    cheatsheet.hidden = false;
-    docsBtn.innerHTML = "Docs &#x25B4;";
-  }
-} catch(e) {}
+docsBtn.addEventListener("click", () => (docsMode ? closeDocs() : openDocs()));
 
 // --- File Menu ---
+// Docs mode counts as unnamed: the menu then offers "Save as", never Delete or Rename,
+// so the document underneath cannot be overwritten with docs text.
 function activeName() {
-  return store.getActive().name;
+  return docsMode ? null : store.getActive().name;
 }
 
 function updateFileLabel() {
   const name = activeName();
-  fileBtn.textContent = (name === null ? "Untitled *" : name) + " \u25BE";
+  const label = docsMode ? "Docs (not saved)" : name === null ? "Untitled *" : name;
+  fileBtn.textContent = label + " \u25BE";
 }
 
 function renderFileMenu() {
@@ -94,11 +88,13 @@ function closeFileMenu() {
 
 function flushSave() {
   clearTimeout(saveTimer);
-  store.saveActive(input.value);
+  if (!docsMode) store.saveActive(input.value);
 }
 
 function switchTo(name, text) {
   flushSave();
+  docsMode = false;
+  docsBtn.textContent = "Docs";
   store.setActive(name);
   input.value = text;
   render();
@@ -193,9 +189,8 @@ function render() {
 input.addEventListener("input", render);
 // Capture phase: any key closes the file menu, even when the autocomplete popup
 // stops the Escape key from bubbling.
-document.addEventListener("keydown", e => {
-  if (!fileMenu.hidden) { closeFileMenu(); return; }
-  if (e.key === "Escape" && !cheatsheet.hidden) toggleDocs();
+document.addEventListener("keydown", () => {
+  if (!fileMenu.hidden) closeFileMenu();
 }, true);
 
 // --- Line hover highlight ---
@@ -350,6 +345,7 @@ acEl.addEventListener("click", e => {
 let saveTimer = null;
 function scheduleSave() {
   clearTimeout(saveTimer);
+  if (docsMode) return;
   saveTimer = setTimeout(() => store.saveActive(input.value), 300);
 }
 
@@ -409,38 +405,16 @@ async function shareURL() {
 shareBtn.addEventListener("click", shareURL);
 copyBtn.addEventListener("click", copyText);
 
-const WELCOME = `Write math anywhere. Results appear on the right.
-
-# Monthly Budget
-
-rent 1500
-groceries 200 + 150
-utilities 80 + 45
-sum()
-
-# Variables and percentages
-
-income = 5000
-tax = income * 22%
-after_tax = income - tax
-
-# Unit conversions
-
-5 km in miles
-100 C in F
-
-Try editing these lines, or use the file menu for a blank sheet.
-Click Docs for more features (functions, formatting, etc.)
-`;
-
-readShared().then(shared => {
+readShared().then(async shared => {
   if (shared !== null) {
     history.replaceState(null, "", location.pathname);
     store.setActive(null);
     input.value = shared;
   } else {
     const { name, text } = store.getActive();
-    input.value = text || (name === null && !store.listFiles().length ? WELCOME : "");
+    // A first visit starts with the docs as an ordinary draft, so edits to it are kept.
+    const fresh = name === null && !store.listFiles().length;
+    input.value = text || (fresh ? await loadDocs().catch(() => "") : "");
   }
   render();
   updateFileLabel();
