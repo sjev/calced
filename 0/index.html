@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>calced</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%232563eb'/><rect x='11' y='18' width='20' height='5' rx='2.5' fill='white' opacity='.4'/><rect x='11' y='30' width='14' height='5' rx='2.5' fill='white' opacity='.4'/><rect x='11' y='42' width='22' height='5' rx='2.5' fill='white' opacity='.4'/><rect x='39' y='18' width='14' height='5' rx='2.5' fill='white'/><rect x='43' y='30' width='10' height='5' rx='2.5' fill='white'/><rect x='37' y='42' width='16' height='5' rx='2.5' fill='white'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%231e1e2e'/><rect x='11' y='18' width='20' height='5' rx='2.5' fill='%23cdd6f4' opacity='.55'/><rect x='11' y='30' width='14' height='5' rx='2.5' fill='%23cdd6f4' opacity='.55'/><rect x='11' y='42' width='22' height='5' rx='2.5' fill='%23cdd6f4' opacity='.55'/><rect x='39' y='18' width='14' height='5' rx='2.5' fill='%23a6e3a1'/><rect x='43' y='30' width='10' height='5' rx='2.5' fill='%23a6e3a1'/><rect x='37' y='42' width='16' height='5' rx='2.5' fill='%23a6e3a1'/></svg>">
 <meta name="description" content="A notepad calculator that evaluates math expressions in plain text. No install, works offline.">
 <meta property="og:title" content="calced">
 <meta property="og:description" content="A notepad calculator that evaluates math expressions in plain text. No install, works offline.">
@@ -44,6 +44,7 @@ header {
 }
 header h1 { font-size: 1em; font-weight: 600; color: var(--dim); }
 header h1 a { color: inherit; text-decoration: none; }
+.ver { font-size: 0.8em; font-weight: 400; opacity: 0.6; }
 header div { display: flex; gap: 8px; }
 .header-link, #share-btn {
   background: var(--border); color: var(--text); border: none; padding: 6px 14px;
@@ -122,7 +123,7 @@ header div { display: flex; gap: 8px; }
 </head>
 <body>
 <header>
-  <h1><a href=""><svg width="1.2em" height="1.2em" viewBox="0 0 64 64" style="vertical-align:-0.15em"><rect width="64" height="64" rx="14" fill="#2563eb"/><rect x="11" y="18" width="20" height="5" rx="2.5" fill="white" opacity=".4"/><rect x="11" y="30" width="14" height="5" rx="2.5" fill="white" opacity=".4"/><rect x="11" y="42" width="22" height="5" rx="2.5" fill="white" opacity=".4"/><rect x="39" y="18" width="14" height="5" rx="2.5" fill="white"/><rect x="43" y="30" width="10" height="5" rx="2.5" fill="white"/><rect x="37" y="42" width="16" height="5" rx="2.5" fill="white"/></svg> calced</a></h1>
+  <h1><a href=""><svg width="1.2em" height="1.2em" viewBox="0 0 64 64" style="vertical-align:-0.15em"><rect width="64" height="64" rx="14" fill="#1e1e2e"/><rect x="11" y="18" width="20" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="11" y="30" width="14" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="11" y="42" width="22" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="39" y="18" width="14" height="5" rx="2.5" fill="#a6e3a1"/><rect x="43" y="30" width="10" height="5" rx="2.5" fill="#a6e3a1"/><rect x="37" y="42" width="16" height="5" rx="2.5" fill="#a6e3a1"/></svg> calced</a> <span class="ver">v0.7.0</span></h1>
   <div>
     <a class="header-link" href="#new" target="_blank">New</a>
     <button class="header-link" id="docs-btn" onclick="toggleDocs()">Docs &#x25BE;</button>
