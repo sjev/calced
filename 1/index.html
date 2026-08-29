@@ -15,80 +15,16 @@
 </head>
 <body>
 <header>
-  <h1><a href=""><svg width="1.2em" height="1.2em" viewBox="0 0 64 64" style="vertical-align:-0.15em"><rect width="64" height="64" rx="14" fill="#1e1e2e"/><rect x="11" y="18" width="20" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="11" y="30" width="14" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="11" y="42" width="22" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="39" y="18" width="14" height="5" rx="2.5" fill="#a6e3a1"/><rect x="43" y="30" width="10" height="5" rx="2.5" fill="#a6e3a1"/><rect x="37" y="42" width="16" height="5" rx="2.5" fill="#a6e3a1"/></svg> calced</a> <span class="ver">v1.2.0</span></h1>
+  <h1><a href=""><svg width="1.2em" height="1.2em" viewBox="0 0 64 64" style="vertical-align:-0.15em"><rect width="64" height="64" rx="14" fill="#1e1e2e"/><rect x="11" y="18" width="20" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="11" y="30" width="14" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="11" y="42" width="22" height="5" rx="2.5" fill="#cdd6f4" opacity=".55"/><rect x="39" y="18" width="14" height="5" rx="2.5" fill="#a6e3a1"/><rect x="43" y="30" width="10" height="5" rx="2.5" fill="#a6e3a1"/><rect x="37" y="42" width="16" height="5" rx="2.5" fill="#a6e3a1"/></svg> calced</a> <span class="ver">v1.3.0</span></h1>
   <div id="header-actions">
     <button class="header-link" id="file-btn">Untitled &#x25BE;</button>
     <div id="file-menu" hidden></div>
-    <button class="header-link" id="docs-btn">Docs &#x25BE;</button>
+    <button class="header-link" id="docs-btn">Docs</button>
     <button id="share-btn">Share</button>
     <button class="header-link" id="copy-btn" title="Copy text with results" aria-label="Copy text with results"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
     <a class="header-link" id="gh-link" href="https://github.com/sjev/calced" target="_blank" rel="noopener" title="Source on GitHub" aria-label="Source on GitHub"><svg width="1em" height="1em" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
   </div>
 </header>
-<div id="cheatsheet" hidden>
-  <div class="cs-grid">
-    <div>
-      <div class="cs-head">Basics <a class="cs-try" data-example="basics">Try</a></div>
-      <div class="cs-ex">2 + 3</div>
-      <div class="cs-ex">10 * (4 + 6)</div>
-      <div class="cs-ex">2 ^ 10</div>
-    </div>
-    <div>
-      <div class="cs-head">Variables <a class="cs-try" data-example="variables">Try</a></div>
-      <div class="cs-ex">price = 100</div>
-      <div class="cs-ex">qty = 3</div>
-      <div class="cs-ex">total = price * qty</div>
-    </div>
-    <div>
-      <div class="cs-head">Totals <a class="cs-try" data-example="totals">Try</a></div>
-      <div class="cs-ex">100</div>
-      <div class="cs-ex">200</div>
-      <div class="cs-ex">sum()</div>
-    </div>
-    <div>
-      <div class="cs-head">Percentages <a class="cs-try" data-example="pct">Try</a></div>
-      <div class="cs-ex">50% of 300</div>
-      <div class="cs-ex">200 + 15%</div>
-      <div class="cs-ex">200 - 10%</div>
-    </div>
-    <div>
-      <div class="cs-head">Units <a class="cs-try" data-example="units">Try</a></div>
-      <div class="cs-ex">5 km in miles</div>
-      <div class="cs-ex">100 C in F</div>
-      <div class="cs-ex">1 gib in mib</div>
-    </div>
-    <div>
-      <div class="cs-head">Functions <a class="cs-try" data-example="funcs">Try</a></div>
-      <div class="cs-ex">sqrt(16)</div>
-      <div class="cs-ex">round(3.14, 2)</div>
-      <div class="cs-ex">min(5, 2, 8)</div>
-    </div>
-    <div>
-      <div class="cs-head">Rates <a class="cs-try" data-example="rates">Try</a></div>
-      <div class="cs-ex">@rate USD/EUR = 0.92</div>
-      <div class="cs-ex">100 USD in EUR</div>
-      <div class="cs-ex">50 EUR in USD</div>
-    </div>
-    <div>
-      <div class="cs-head">Dates <a class="cs-try" data-example="dates">Try</a></div>
-      <div class="cs-ex">date() + 2 weeks</div>
-      <div class="cs-ex">now() + 3 hours</div>
-      <div class="cs-ex">days until 2025-12-31</div>
-    </div>
-    <div>
-      <div class="cs-head">Formatting <a class="cs-try" data-example="fmt">Try</a></div>
-      <div class="cs-ex">1.5k + 500</div>
-      <div class="cs-ex">@format = fixed(2)</div>
-      <div class="cs-ex">@format = eng</div>
-      <div class="cs-ex">@separator = comma</div>
-    </div>
-  </div>
-  <div class="cs-foot">
-    <span class="cs-hint">Suggestions appear as you type. Ctrl+Space shows the full list.</span>
-    <a href="https://github.com/sjev/calced#features" target="_blank" rel="noopener">Full docs &#x2192;</a>
-    <a href="https://github.com/karlb/calced" target="_blank" rel="noopener">Fork of calced by Karl Bartel</a>
-  </div>
-</div>
 <div class="editor-wrap">
   <div class="editor-inner">
     <div class="input-wrap">
