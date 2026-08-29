@@ -135,3 +135,11 @@ budget 2000 EUR                         # => 2_000
 1000000                                 # => 1,000,000
 
 Suggestions appear as you type. Ctrl+Space shows the full list.
+
+# Privacy
+
+Your document stays in the browser. Calculation is local, and a shared link holds
+the text in the URL itself.
+
+The page counts anonymous pageviews with a self-hosted Umami instance.
+It sets no cookies and keeps no personal data.
