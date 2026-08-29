@@ -27,5 +27,24 @@ Homepage = "https://calced.karl.berlin"
 Repository = "https://github.com/karlb/calced"
 Issues = "https://github.com/karlb/calced/issues"
 
-[tool.hatch.build]
-include = ["calced.py", "README.md", "LICENSE"]
+[tool.hatch.build.targets.wheel]
+only-include = ["python/calced.py"]
+sources = ["python"]
+
+[tool.hatch.build.targets.sdist]
+include = ["python/calced.py", "README.md", "LICENSE"]
+
+[dependency-groups]
+dev = ["invoke>=2.2", "ruff>=0.4", "cogapp", "hypothesis", "pytest"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# Pinned explicitly: the default set grows between ruff releases, and most of the
+# code comes from upstream.
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # the formatter wraps code; the rest are long strings it cannot split
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["E402"]  # sys.path.insert must run before importing calced

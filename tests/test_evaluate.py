@@ -9,8 +9,9 @@ import unittest
 
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(here, "..", "python"))
-from calced import evaluate_line, classify_line, process_json
 from decimal import Decimal
+
+from calced import evaluate_line, process_json
 
 with open(os.path.join(here, "evaluate_vectors.json")) as f:
     vectors = json.load(f)

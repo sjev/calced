@@ -9,6 +9,7 @@ V8's libm return doubles that differ in the last ulp for some transcendental
 inputs (tan far from zero, non-integer powers). Both engines then print their own
 double faithfully. Those are counted, capped, and reported, not silenced.
 """
+
 import json
 import os
 import random
@@ -26,26 +27,53 @@ EXPRESSIONS = int(os.environ.get("CALCED_FUZZ_N", "500"))
 DOC_LINES = 40  # keep documents the size real ones are
 
 MODES = [
-    "minSig(10)", "minSig(3)", "minSig(15)", "minSig(1)",
-    "fixed(0)", "fixed(2)", "fixed(4)", "fixed(8)",
-    "scientific(6)", "scientific(1)", "eng(3)", "eng(4)", "eng(6)",
-    "auto(8)", "auto(3)", "auto(15)",
+    "minSig(10)",
+    "minSig(3)",
+    "minSig(15)",
+    "minSig(1)",
+    "fixed(0)",
+    "fixed(2)",
+    "fixed(4)",
+    "fixed(8)",
+    "scientific(6)",
+    "scientific(1)",
+    "eng(3)",
+    "eng(4)",
+    "eng(6)",
+    "auto(8)",
+    "auto(3)",
+    "auto(15)",
 ]
 SEPARATORS = ["off", "comma", "underscore", "space"]
 OPS = ["+", "-", "*", "/", "%"]
 FUNCS = ["sqrt", "abs", "ln", "log", "log2", "sin", "cos", "tan", "exp", "round", "floor", "ceil"]
-UNITS = [("km", "m"), ("kg", "g"), ("h", "min"), ("MB", "KB"), ("C", "F"),
-         ("mi", "km"), ("lb", "kg"), ("gal", "l"), ("GiB", "MiB"), ("min", "s")]
+UNITS = [
+    ("km", "m"),
+    ("kg", "g"),
+    ("h", "min"),
+    ("MB", "KB"),
+    ("C", "F"),
+    ("mi", "km"),
+    ("lb", "kg"),
+    ("gal", "l"),
+    ("GiB", "MiB"),
+    ("min", "s"),
+]
 
 
 def _num(rnd):
-    return rnd.choice([
-        f"{rnd.randint(1, 999999)}",
-        f"{rnd.uniform(0.0001, 10000):.6f}",
-        f"{rnd.randint(1, 99)}.{rnd.choice(['5', '25', '125', '05', '75', '375', '625', '0625'])}",
-        f"{rnd.randint(1, 90)}k", f"{rnd.randint(1, 9)}M", f"{rnd.randint(1, 9)}u",
-        f"{rnd.uniform(1, 9):.3f}e{rnd.randint(-8, 8)}", f"0.{rnd.randint(1, 999)}",
-    ])
+    return rnd.choice(
+        [
+            f"{rnd.randint(1, 999999)}",
+            f"{rnd.uniform(0.0001, 10000):.6f}",
+            f"{rnd.randint(1, 99)}.{rnd.choice(['5', '25', '125', '05', '75', '375', '625', '0625'])}",
+            f"{rnd.randint(1, 90)}k",
+            f"{rnd.randint(1, 9)}M",
+            f"{rnd.randint(1, 9)}u",
+            f"{rnd.uniform(1, 9):.3f}e{rnd.randint(-8, 8)}",
+            f"0.{rnd.randint(1, 999)}",
+        ]
+    )
 
 
 def _expression(rnd):
@@ -80,7 +108,9 @@ def _documents():
     for i, mode in enumerate(MODES):
         sep = SEPARATORS[i % len(SEPARATORS)]
         for start in range(0, len(exprs), DOC_LINES):
-            docs.append([f"@format = {mode}", f"@separator = {sep}"] + exprs[start:start + DOC_LINES])
+            docs.append(
+                [f"@format = {mode}", f"@separator = {sep}"] + exprs[start : start + DOC_LINES]
+            )
     return docs
 
 
@@ -90,7 +120,8 @@ def _python_results(docs):
         results = []
         for line in calced._process_lines("\n".join(doc)):
             results.append(
-                None if line.result is None
+                None
+                if line.result is None
                 else calced.format_result(line.result, line.fmt_opts).strip()
             )
         out.append(results)
@@ -100,7 +131,9 @@ def _python_results(docs):
 def _js_results(docs):
     proc = subprocess.run(
         ["node", os.path.join(ROOT, "tests", "differential.mjs")],
-        input=json.dumps(docs), capture_output=True, text=True,
+        input=json.dumps(docs),
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         raise RuntimeError("JS engine failed: " + proc.stderr[-2000:])
@@ -119,8 +152,9 @@ def _is_float_path(expr):
 def _agree_to(p, j, digits):
     """True when two formatted numbers agree once rounded to `digits` figures."""
     try:
-        a, b = Decimal(p.replace("_", "").replace(",", "").replace(" ", "")), Decimal(
-            j.replace("_", "").replace(",", "").replace(" ", "")
+        a, b = (
+            Decimal(p.replace("_", "").replace(",", "").replace(" ", "")),
+            Decimal(j.replace("_", "").replace(",", "").replace(" ", "")),
         )
     except (InvalidOperation, AttributeError):
         return False
@@ -159,7 +193,9 @@ class TestDifferential(unittest.TestCase):
                 f"{LIBM_BUDGET:.1%} libm budget:\n  " + "\n  ".join(libm[:15])
             )
         if libm:
-            print(f"\n  {len(libm)} of {lines} differ in the last digits only (libm), within budget")
+            print(
+                f"\n  {len(libm)} of {lines} differ in the last digits only (libm), within budget"
+            )
 
 
 if __name__ == "__main__":

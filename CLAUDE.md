@@ -13,21 +13,28 @@ When referring to "JS" or "JavaScript", that means the web version in `web/index
 
 ## Commands
 
+Automation uses [invoke](https://www.pyinvoke.org/). Run `inv -l` for the full list.
+
 ```bash
-make test              # Run all tests (Python + JS)
-make test-py           # Python unit tests + .md integration tests
-make test-js           # JavaScript tests (node web/test.mjs)
-make test-property     # Property-based tests (requires hypothesis + pytest)
+uv sync                # Create .venv with the dev dependencies
+inv ci                 # Lint + all tests
+inv lint               # ruff check + ruff format --check
+inv format             # ruff format
+inv test               # All tests (Python + JS)
+inv test-py            # Python unit tests + .md integration tests
+inv test-js            # JavaScript tests (node web/test.mjs)
+inv test-property      # Property-based tests (hypothesis)
+inv test-diff          # Differential fuzz between both engines
 
 # Run a single Python test file
-python3 -m unittest tests/test_evaluate.py
+uv run python -m unittest tests.test_evaluate
 
 # Run a single .md integration test
-python/calced.py tests/basic_arithmetic.md
+uv run python python/calced.py tests/basic_arithmetic.md
 git diff --exit-code -- tests/basic_arithmetic.md  # verify no changes
 
 # Regenerate README (uses cogapp to run inline examples)
-make README.md
+inv readme
 ```
 
 ## Architecture
@@ -50,6 +57,6 @@ New tests should use `.md` fixture files or add vectors to the JSON files — th
 
 ## Cross-Language Consistency
 
-Features must work identically in both Python and JS. When implementing a change, check both implementations and run `make test` to verify both pass. The `.md` integration tests and JSON vectors are shared across both.
+Features must work identically in both Python and JS. When implementing a change, check both implementations and run `inv test` to verify both pass. The `.md` integration tests and JSON vectors are shared across both.
 
-For non-trivial features, consider using separate agents for the Python and JS implementations, then run `make test` to verify both pass.
+For non-trivial features, consider using separate agents for the Python and JS implementations, then run `inv test` to verify both pass.

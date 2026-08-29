@@ -383,3 +383,15 @@ run_calced("""
 ```
 <sub>[Try in web app](https://calced.karl.berlin/0/#MzQAAy6HtPyi3MQSBVuFtMyK1BQNI00uQwyp4uTM1LySzLTMZCySqXnpCNHi1ILEosSS_CKgRHJ-bm4iksLczLzgzHQNY4QNAA)</sub>
 <!-- [[[end]]] -->
+
+## Development
+
+Tasks run with [invoke](https://www.pyinvoke.org/). Run `inv -l` for the full list.
+
+```sh
+uv sync            # create .venv with the dev dependencies
+inv ci             # lint + all tests (Python and JS)
+inv format         # format the code
+inv readme         # regenerate this file from its inline examples
+uv tool install .  # install the CLI from this checkout
+```

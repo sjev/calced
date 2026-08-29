@@ -5,32 +5,32 @@ Run with: make test-property
 """
 
 import datetime
-import sys
 import os
+import sys
 
 try:
     import pytest
-    from hypothesis import given, assume, settings, example
+    from hypothesis import assume, given, settings
     from hypothesis import strategies as st
 except ImportError:
     # Skip entirely when discovered by unittest (which lacks these deps).
     import unittest
+
     raise unittest.SkipTest("requires pytest and hypothesis")
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from itertools import combinations
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 from calced import (
-    tokenize,
-    evaluate_line,
-    classify_line,
-    format_result,
-    convert_temperature,
+    BUILTIN_FUNC_NAMES,
     SI_PREFIX,
     UNIT_TABLE,
-    BUILTIN_CONSTS,
-    BUILTIN_FUNC_NAMES,
+    classify_line,
+    convert_temperature,
+    evaluate_line,
+    format_result,
+    tokenize,
 )
 
 # ---------------------------------------------------------------------------
@@ -250,9 +250,7 @@ def test_temperature_roundtrip_function(pair, value):
     intermediate = convert_temperature(value, a, b)
     roundtrip = convert_temperature(intermediate, b, a)
     diff = abs(roundtrip - value)
-    assert diff < Decimal("1e-6"), (
-        f"{value} {a}→{b}→{a} = {roundtrip}, diff={diff}"
-    )
+    assert diff < Decimal("1e-6"), f"{value} {a}→{b}→{a} = {roundtrip}, diff={diff}"
 
 
 @given(
@@ -279,9 +277,7 @@ def test_temperature_roundtrip_evaluate(pair, value):
     assume(r2 is not None)
 
     diff = abs(r2 - value)
-    assert diff < Decimal("0.01"), (
-        f"{value} {ua}→{ub}→{ua} = {r2}, diff={diff}"
-    )
+    assert diff < Decimal("0.01"), f"{value} {ua}→{ub}→{ua} = {r2}, diff={diff}"
 
 
 # ---------------------------------------------------------------------------
@@ -374,13 +370,15 @@ def test_si_prefix_tokenizes_correctly(prefix, expected_multiplier):
 _single_arg_funcs = [f for f in BUILTIN_FUNC_NAMES if f not in ("min", "max", "round")]
 
 
-@given(a=st.decimals(
-    allow_nan=False,
-    allow_infinity=False,
-    min_value=Decimal("1"),
-    max_value=Decimal("1000"),
-    places=4,
-).filter(lambda d: d.is_finite()))
+@given(
+    a=st.decimals(
+        allow_nan=False,
+        allow_infinity=False,
+        min_value=Decimal("1"),
+        max_value=Decimal("1000"),
+        places=4,
+    ).filter(lambda d: d.is_finite())
+)
 @settings(max_examples=200)
 def test_nested_abs_identity(a):
     """abs(abs(a)) == abs(a) for positive a."""
@@ -420,12 +418,8 @@ def test_label_prefix_does_not_change_result(expr, label):
     r_plain, *_ = evaluate_line(expr, {})
     assume(r_plain is not None)
     r_labeled, *_ = evaluate_line(f"{label} {expr}", {})
-    assert r_labeled is not None, (
-        f"'{label} {expr}' returned None but '{expr}' returned {r_plain}"
-    )
-    assert r_plain == r_labeled, (
-        f"'{label} {expr}' = {r_labeled}, but '{expr}' = {r_plain}"
-    )
+    assert r_labeled is not None, f"'{label} {expr}' returned None but '{expr}' returned {r_plain}"
+    assert r_plain == r_labeled, f"'{label} {expr}' = {r_labeled}, but '{expr}' = {r_plain}"
 
 
 _paren_labels = st.sampled_from(["(note)", "(monthly)", "(info)", "(cost)"])
@@ -438,12 +432,8 @@ def test_paren_label_prefix_does_not_change_result(expr, label):
     r_plain, *_ = evaluate_line(expr, {})
     assume(r_plain is not None)
     r_labeled, *_ = evaluate_line(f"{label} {expr}", {})
-    assert r_labeled is not None, (
-        f"'{label} {expr}' returned None but '{expr}' returned {r_plain}"
-    )
-    assert r_plain == r_labeled, (
-        f"'{label} {expr}' = {r_labeled}, but '{expr}' = {r_plain}"
-    )
+    assert r_labeled is not None, f"'{label} {expr}' returned None but '{expr}' returned {r_plain}"
+    assert r_plain == r_labeled, f"'{label} {expr}' = {r_labeled}, but '{expr}' = {r_plain}"
 
 
 # ---------------------------------------------------------------------------

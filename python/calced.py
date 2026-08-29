@@ -12,10 +12,10 @@ import json
 import math
 import os
 import re
-from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 import sys
 import time
 import zlib
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 
 RESULT_RE = re.compile(r"\s+# => .*$")
 DIRECTIVE_RE = re.compile(r"^@(format|separator)\s*=\s*(.+)$", re.IGNORECASE)
@@ -51,6 +51,7 @@ def _add_months(d, months):
     max_day = calendar.monthrange(year, month)[1]
     return datetime.date(year, month, min(d.day, max_day))
 
+
 # SI prefixes (case-sensitive: M=mega, m=milli)
 SI_PREFIX = {
     "Q": Decimal("1e30"),  # quetta
@@ -82,8 +83,16 @@ MAX_RESULT_DIGITS = 1000
 
 # "%" is modulo here; a "%" that follows a number is tokenized as PCT instead.
 SINGLE_CHAR_TOKENS = {
-    "+": "ADDOP", "-": "ADDOP", "*": "MULOP", "/": "MULOP", "%": "MULOP",
-    "^": "POW", "(": "LPAREN", ")": "RPAREN", ",": "COMMA", "=": "EQ",
+    "+": "ADDOP",
+    "-": "ADDOP",
+    "*": "MULOP",
+    "/": "MULOP",
+    "%": "MULOP",
+    "^": "POW",
+    "(": "LPAREN",
+    ")": "RPAREN",
+    ",": "COMMA",
+    "=": "EQ",
 }
 
 
@@ -102,9 +111,12 @@ def _pow_exceeds_limit(base, exp):
 
 def _float_func(fn):
     """Wrap a math.* function: Decimal -> float -> compute -> Decimal."""
+
     def wrapper(x):
         return Decimal(str(fn(float(x))))
+
     return wrapper
+
 
 BUILTIN_FUNCS_1 = {
     "sqrt": lambda x: x.sqrt() if isinstance(x, Decimal) else Decimal(str(math.sqrt(x))),
@@ -123,9 +135,7 @@ BUILTIN_FUNCS_1 = {
     "exp": _float_func(math.exp),
 }
 BUILTIN_FUNCS_N = {
-    "round": lambda args: round(args[0])
-    if len(args) == 1
-    else round(args[0], int(args[1])),
+    "round": lambda args: round(args[0]) if len(args) == 1 else round(args[0], int(args[1])),
     "min": lambda args: min(args),
     "max": lambda args: max(args),
 }
@@ -332,9 +342,7 @@ def tokenize(text):
 
         # Numbers: 1,000 or 1_000 or 1.5 or .5 or 1.5e3 with optional SI suffix
         m = re.match(
-            r"(\d(?:\d|_|,(?=\d))*\.?\d*|\.\d+)(?:([eE][+-]?\d+)|("
-            + SI_SUFFIX_RE
-            + r"))?",
+            r"(\d(?:\d|_|,(?=\d))*\.?\d*|\.\d+)(?:([eE][+-]?\d+)|(" + SI_SUFFIX_RE + r"))?",
             text[i:],
         )
         if m and m.group(1):
@@ -417,8 +425,7 @@ def classify_line(text, variables, rates=None):
     all_names = set(BUILTIN_CONSTS) | set(variables)
 
     has_date = any(t[0] == DATE for t in tokens) or any(
-        t[0] == "WORD" and isinstance(variables.get(t[1].lower()), datetime.date)
-        for t in tokens
+        t[0] == "WORD" and isinstance(variables.get(t[1].lower()), datetime.date) for t in tokens
     )
 
     has_math = any(
@@ -437,9 +444,9 @@ def classify_line(text, variables, rates=None):
             # Reduce parenthesized date sub-expressions for classification
             tokens = _reduce_date_subexprs(tokens, variables)
     if has_math and not active:
-        if (any(t[0] == "TOTAL" for t in tokens)
-                and not any(t[0] in ("NUM", "PCT", "FUNC", "WORD", "LPAREN")
-                            for t in tokens)):
+        if any(t[0] == "TOTAL" for t in tokens) and not any(
+            t[0] in ("NUM", "PCT", "FUNC", "WORD", "LPAREN") for t in tokens
+        ):
             for idx, t in enumerate(tokens):
                 if t[0] == "TOTAL":
                     active.add(idx)
@@ -555,11 +562,13 @@ class Parser:
                 right = self.parse_term()
                 left = left + right if op == "+" else left - right
         # Handle "X as % of Y" → (X / Y) * 100
-        if (self.peek()[0] == "AS"
-                and self.pos + 2 < len(self.tokens)
-                and self.tokens[self.pos + 1][0] == "MULOP"
-                and self.tokens[self.pos + 1][1] == "%"
-                and self.tokens[self.pos + 2][0] == "OF"):
+        if (
+            self.peek()[0] == "AS"
+            and self.pos + 2 < len(self.tokens)
+            and self.tokens[self.pos + 1][0] == "MULOP"
+            and self.tokens[self.pos + 1][1] == "%"
+            and self.tokens[self.pos + 2][0] == "OF"
+        ):
             self.consume()  # AS
             self.consume()  # %
             self.consume()  # OF
@@ -660,6 +669,7 @@ def _cross_rate(fr, to, rates):
 
     Returns the effective Decimal multiplier (1 fr = result to), or None.
     """
+
     def _rate_to_mid(currency, mid):
         """Return the rate that converts 1 *currency* into *mid* units."""
         if (currency, mid) in rates:
@@ -843,7 +853,7 @@ def _try_parse(math_tokens):
     try:
         parser = Parser(math_tokens)
         result = parser.parse_expr()
-        if _is_annotation(math_tokens[parser.pos:]):
+        if _is_annotation(math_tokens[parser.pos :]):
             return result, parser.pos
         return None, -1
     except (ParseError, ArithmeticError, ValueError):
@@ -945,11 +955,7 @@ def _try_date_eval_inner(tokens, variables):
         return None
 
     # Strip outer parentheses
-    while (
-        len(body) >= 2
-        and body[0][0] == "LPAREN"
-        and body[-1][0] == "RPAREN"
-    ):
+    while len(body) >= 2 and body[0][0] == "LPAREN" and body[-1][0] == "RPAREN":
         body = body[1:-1]
     if not body:
         return None
@@ -978,14 +984,9 @@ def _try_date_eval_inner(tokens, variables):
 
     # Strip leading label tokens before the first DATE for remaining patterns
     labels_stripped = False
-    first_date_idx = next(
-        (i for i, t in enumerate(body) if t[0] == DATE), None
-    )
+    first_date_idx = next((i for i, t in enumerate(body) if t[0] == DATE), None)
     if first_date_idx is not None and first_date_idx > 0:
-        if all(
-            t[0] in ("WORD", "LPAREN", "RPAREN", "COMMA")
-            for t in body[:first_date_idx]
-        ):
+        if all(t[0] in ("WORD", "LPAREN", "RPAREN", "COMMA") for t in body[:first_date_idx]):
             body = body[first_date_idx:]
             labels_stripped = True
 
@@ -1006,8 +1007,11 @@ def _try_date_eval_inner(tokens, variables):
             pos += 1
             # The segment runs up to the duration unit that closes it
             dur_pos = next(
-                (j for j in range(pos, len(body))
-                 if body[j][0] == "WORD" and body[j][1].lower() in DURATION_UNITS),
+                (
+                    j
+                    for j in range(pos, len(body))
+                    if body[j][0] == "WORD" and body[j][1].lower() in DURATION_UNITS
+                ),
                 None,
             )
             if dur_pos is None or dur_pos == pos:
@@ -1183,7 +1187,8 @@ def format_result(n, fmt_opts=None):
 
 
 Line = collections.namedtuple(
-    "Line", "clean result fmt_opts variables rates is_total",
+    "Line",
+    "clean result fmt_opts variables rates is_total",
     defaults=(None, None, None, None, False),
 )
 
@@ -1301,13 +1306,15 @@ def _align_decimals(fmt_strs):
 
 def _format_section(section, use_color):
     """Format one section into plain and colored output lines."""
-    widths = [len(l.clean) for l in section if l.result is not None]
+    widths = [len(line.clean) for line in section if line.result is not None]
     align = max(max(widths) + 2, 40) if widths else 40
 
-    fmt_strs = _align_decimals([
-        format_result(l.result, l.fmt_opts) if l.result is not None else None
-        for l in section
-    ])
+    fmt_strs = _align_decimals(
+        [
+            format_result(line.result, line.fmt_opts) if line.result is not None else None
+            for line in section
+        ]
+    )
     indicators = _total_indicators(section)
     ind_width = max(
         [len(f) for f, ind in zip(fmt_strs, indicators) if ind and f is not None],
@@ -1326,9 +1333,17 @@ def _format_section(section, use_color):
         suffix = f" {indicator}" if indicator else ""
         out.append(f"{line.clean.ljust(align)}# => {padded}{suffix}")
         if use_color:
-            col.append(colorize_line(line.clean, line.result, padded, align,
-                                     line.variables, rates=line.rates,
-                                     indicator=indicator))
+            col.append(
+                colorize_line(
+                    line.clean,
+                    line.result,
+                    padded,
+                    align,
+                    line.variables,
+                    rates=line.rates,
+                    indicator=indicator,
+                )
+            )
     return out, col
 
 
@@ -1443,11 +1458,15 @@ def _get_version():
     try:
         return importlib.metadata.version("calced")
     except importlib.metadata.PackageNotFoundError:
-        toml_path = os.path.join(os.path.dirname(__file__), "pyproject.toml")
-        with open(toml_path) as f:
-            for line in f:
-                if line.startswith("version"):
-                    return line.split('"')[1]
+        # Running from a source checkout: pyproject.toml sits in the repo root.
+        toml_path = os.path.join(os.path.dirname(__file__), "..", "pyproject.toml")
+        try:
+            with open(toml_path) as f:
+                for line in f:
+                    if line.startswith("version"):
+                        return line.split('"')[1]
+        except OSError:
+            pass
         return "0"
 
 
