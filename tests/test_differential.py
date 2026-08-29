@@ -88,8 +88,11 @@ def _python_results(docs):
     out = []
     for doc in docs:
         results = []
-        for _clean, result, opts, _vars, _total in calced._process_lines("\n".join(doc)):
-            results.append(None if result is None else calced.format_result(result, opts).strip())
+        for line in calced._process_lines("\n".join(doc)):
+            results.append(
+                None if line.result is None
+                else calced.format_result(line.result, line.fmt_opts).strip()
+            )
         out.append(results)
     return out
 

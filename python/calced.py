@@ -4,6 +4,7 @@
 import argparse
 import base64
 import calendar
+import collections
 import datetime
 import difflib
 import importlib.metadata
@@ -21,7 +22,6 @@ DIRECTIVE_RE = re.compile(r"^@(format|separator)\s*=\s*(.+)$", re.IGNORECASE)
 FORMAT_RE = re.compile(r"^(minSig|fixed|scientific|eng|auto)(?:\((\d+)\))?$", re.IGNORECASE)
 RATE_RE = re.compile(r"^@rate\s+(\w+)/(\w+)\s*=\s*(.+)$", re.IGNORECASE)
 ALIGNABLE_RE = re.compile(r"^-?[\d_, ]+(\.\d+)?$")
-MODE_MAP = {"minsig": "minSig", "fixed": "fixed", "scientific": "scientific", "eng": "eng", "auto": "auto"}
 DEFAULT_FMT_OPTS = {"mode": "minSig", "precision": 10, "separator": "underscore"}
 
 # --- Date/time support ---
@@ -80,6 +80,12 @@ ENG_SUFFIX = {round(math.log10(float(v))): k for k, v in SI_PREFIX.items() if k 
 
 MAX_RESULT_DIGITS = 1000
 
+# "%" is modulo here; a "%" that follows a number is tokenized as PCT instead.
+SINGLE_CHAR_TOKENS = {
+    "+": "ADDOP", "-": "ADDOP", "*": "MULOP", "/": "MULOP", "%": "MULOP",
+    "^": "POW", "(": "LPAREN", ")": "RPAREN", ",": "COMMA", "=": "EQ",
+}
+
 
 def _pow_exceeds_limit(base, exp):
     """True when base**exp has more than MAX_RESULT_DIGITS digits.
@@ -134,7 +140,6 @@ BUILTIN_CONSTS = {
 # --- Unit conversion tables ---
 UNIT_TABLE = {
     "length": {
-        "_base": "meter",
         "mm": Decimal("0.001"),
         "millimeter": Decimal("0.001"),
         "millimeters": Decimal("0.001"),
@@ -161,7 +166,6 @@ UNIT_TABLE = {
         "miles": Decimal("1609.344"),
     },
     "mass": {
-        "_base": "gram",
         "mg": Decimal("0.001"),
         "milligram": Decimal("0.001"),
         "milligrams": Decimal("0.001"),
@@ -180,7 +184,6 @@ UNIT_TABLE = {
         "pounds": Decimal("453.592"),
     },
     "temperature": {
-        "_base": "special",
         "c": "c",
         "celsius": "c",
         "f": "f",
@@ -189,7 +192,6 @@ UNIT_TABLE = {
         "kelvin": "k",
     },
     "data": {
-        "_base": "byte",
         "b": 1,
         "byte": 1,
         "bytes": 1,
@@ -219,7 +221,6 @@ UNIT_TABLE = {
         "tebibytes": 1099511627776,
     },
     "time": {
-        "_base": "second",
         "ms": Decimal("0.001"),
         "millisecond": Decimal("0.001"),
         "milliseconds": Decimal("0.001"),
@@ -239,7 +240,6 @@ UNIT_TABLE = {
         "weeks": 604800,
     },
     "volume": {
-        "_base": "ml",
         "ml": 1,
         "milliliter": 1,
         "milliliters": 1,
@@ -271,8 +271,6 @@ UNIT_TABLE = {
 UNIT_LOOKUP = {}
 for _dim, _units in UNIT_TABLE.items():
     for _name, _factor in _units.items():
-        if _name.startswith("_"):
-            continue
         UNIT_LOOKUP[_name] = (_dim, _factor)
 
 
@@ -358,36 +356,9 @@ def tokenize(text):
                 i = end
             continue
 
-        if text[i] in "+-":
-            tokens.append(("ADDOP", text[i], start, i + 1))
-            i += 1
-            continue
-        if text[i] in "*/":
-            tokens.append(("MULOP", text[i], start, i + 1))
-            i += 1
-            continue
-        if text[i] == "^":
-            tokens.append(("POW", "^", start, i + 1))
-            i += 1
-            continue
-        if text[i] == "%":
-            tokens.append(("MULOP", "%", start, i + 1))  # modulo when standalone
-            i += 1
-            continue
-        if text[i] == "(":
-            tokens.append(("LPAREN", "(", start, i + 1))
-            i += 1
-            continue
-        if text[i] == ")":
-            tokens.append(("RPAREN", ")", start, i + 1))
-            i += 1
-            continue
-        if text[i] == ",":
-            tokens.append(("COMMA", ",", start, i + 1))
-            i += 1
-            continue
-        if text[i] == "=":
-            tokens.append(("EQ", "=", start, i + 1))
+        typ = SINGLE_CHAR_TOKENS.get(text[i])
+        if typ:
+            tokens.append((typ, text[i], start, i + 1))
             i += 1
             continue
 
@@ -441,40 +412,34 @@ def classify_line(text, variables, rates=None):
     if RATE_RE.match(stripped):
         return "directive"
 
+    variables = variables or {}
     tokens = tokenize(text)
-    all_names = set(BUILTIN_CONSTS) | set(variables or {})
+    all_names = set(BUILTIN_CONSTS) | set(variables)
 
-    has_date = any(t[0] == DATE for t in tokens if t[0] != "EOF")
-    # Also check for date variables
-    if not has_date and variables:
-        for t in tokens:
-            if t[0] == "WORD" and isinstance((variables or {}).get(t[1].lower()), datetime.date):
-                has_date = True
-                break
+    has_date = any(t[0] == DATE for t in tokens) or any(
+        t[0] == "WORD" and isinstance(variables.get(t[1].lower()), datetime.date)
+        for t in tokens
+    )
 
     has_math = any(
         t[0] in ("NUM", "PCT", "FUNC", "TOTAL", DATE)
         or (t[0] == "WORD" and t[1].lower() in all_names)
         for t in tokens
-        if t[0] != "EOF"
     )
 
     active = set()
 
     if has_date and has_math:
-        # If it's a date expression, mark all non-EOF tokens as active
-        date_result = _try_date_eval(tokens, variables or {})
-        if date_result is not None:
-            for idx, t in enumerate(tokens):
-                if t[0] != "EOF":
-                    active.add(idx)
+        # A date expression is active as a whole
+        if _try_date_eval(tokens, variables) is not None:
+            active.update(i for i, t in enumerate(tokens) if t[0] != "EOF")
         else:
             # Reduce parenthesized date sub-expressions for classification
-            tokens = _reduce_date_subexprs(tokens, variables or {})
+            tokens = _reduce_date_subexprs(tokens, variables)
     if has_math and not active:
-        if (any(t[0] == "TOTAL" for t in tokens if t[0] != "EOF")
-                and not any(t[0] in ("NUM", "PCT", "OP", "FUNC", "WORD", "LPAREN")
-                            for t in tokens if t[0] not in ("EOF",))):
+        if (any(t[0] == "TOTAL" for t in tokens)
+                and not any(t[0] in ("NUM", "PCT", "FUNC", "WORD", "LPAREN")
+                            for t in tokens)):
             for idx, t in enumerate(tokens):
                 if t[0] == "TOTAL":
                     active.add(idx)
@@ -485,16 +450,13 @@ def classify_line(text, variables, rates=None):
                 active.add(1)
                 math_start = 2
 
-            conversion, conv_start, conv_end = _detect_conversion(tokens, rates=rates)
-            eof_idx = len(tokens) - 1
+            conv = _detect_conversion(tokens, rates=rates)
+            conversion, conv_start, conv_end = conv
             if conversion is not None:
                 active.update(range(conv_start, conv_end))
 
-            all_vars = {**BUILTIN_CONSTS, **(variables or {}),
-                        "total": 0, "sum": 0}
-            math_tokens, math_to_orig = _build_math(
-                tokens, math_start, conv_start, conv_end, eof_idx, all_vars, conversion
-            )
+            all_vars = {**BUILTIN_CONSTS, **variables, "total": 0, "sum": 0}
+            math_tokens, math_to_orig = _build_math(tokens, math_start, all_vars, conv)
             result, consumed = _try_parse(math_tokens)
 
             if result is not None:
@@ -761,14 +723,15 @@ def _detect_conversion(tokens, rates=None):
     return None, eof_idx, eof_idx
 
 
-def _build_math(tokens, start, conv_start, conv_end, eof_idx, all_vars, conversion=None):
+def _build_math(tokens, start, all_vars, conv):
     """Build math token list, resolving variables and skipping non-math tokens.
 
-    Returns (math_tokens, math_to_orig) where math_to_orig[i] is the
-    original token index that math_tokens[i] came from.
+    *conv* is the triple returned by _detect_conversion. Returns
+    (math_tokens, math_to_orig), where math_to_orig[i] is the original token
+    index that math_tokens[i] came from.
     """
-    math_tokens = []
-    math_to_orig = []
+    conversion, conv_start, conv_end = conv
+    pairs = []  # (token, original index)
     paren_depth = 0
     for idx in range(start, len(tokens)):
         t = tokens[idx]
@@ -778,108 +741,98 @@ def _build_math(tokens, start, conv_start, conv_end, eof_idx, all_vars, conversi
                 dim, from_factor, to_factor = conversion
                 if dim != "temperature":
                     factor = Decimal(str(from_factor)) / Decimal(str(to_factor))
-                    math_tokens.append(("MULOP", "*", t[2], t[3]))
-                    math_to_orig.append(idx)
-                    math_tokens.append(("NUM", factor, t[2], t[3]))
-                    math_to_orig.append(idx)
+                    pairs.append((("MULOP", "*", t[2], t[3]), idx))
+                    pairs.append((("NUM", factor, t[2], t[3]), idx))
             continue
         if t[0] == "WORD":
             wl = t[1].lower()
             if wl in all_vars and not isinstance(all_vars[wl], datetime.date):
-                math_tokens.append(("NUM", all_vars[wl], t[2], t[3]))
-                math_to_orig.append(idx)
+                pairs.append((("NUM", all_vars[wl], t[2], t[3]), idx))
         elif t[0] == "TOTAL":
             if "total" in all_vars:
-                math_tokens.append(("NUM", all_vars["total"], t[2], t[3]))
-                math_to_orig.append(idx)
-        elif t[0] in ("EQ", DATE):
-            pass
-        elif t[0] == "COMMA" and paren_depth == 0:
+                pairs.append((("NUM", all_vars["total"], t[2], t[3]), idx))
+        elif t[0] in ("EQ", DATE) or (t[0] == "COMMA" and paren_depth == 0):
             pass
         else:
             if t[0] == "LPAREN":
                 paren_depth += 1
             elif t[0] == "RPAREN":
                 paren_depth -= 1
-            math_tokens.append(t)
-            math_to_orig.append(idx)
-    # Strip empty parentheses (and parens containing only commas) left behind
-    # when WORDs inside parens are skipped
+            pairs.append((t, idx))
+
+    pairs = _strip_empty_parens(pairs)
+    pairs = _strip_orphan_ops(pairs, start)
+    return [t for t, _ in pairs], [i for _, i in pairs]
+
+
+def _strip_empty_parens(pairs):
+    """Drop parens left empty (or holding only commas) after WORDs were skipped."""
     changed = True
     while changed:
         changed = False
-        new_tokens = []
-        new_orig = []
+        out = []
         i = 0
-        while i < len(math_tokens):
-            if math_tokens[i][0] == "LPAREN":
-                # Find matching RPAREN
+        while i < len(pairs):
+            if pairs[i][0][0] == "LPAREN":
                 j = i + 1
-                only_commas = True
-                while j < len(math_tokens) and math_tokens[j][0] != "RPAREN":
-                    if math_tokens[j][0] != "COMMA":
-                        only_commas = False
-                        break
+                while j < len(pairs) and pairs[j][0][0] == "COMMA":
                     j += 1
-                if only_commas and j < len(math_tokens) and math_tokens[j][0] == "RPAREN":
+                if j < len(pairs) and pairs[j][0][0] == "RPAREN":
                     i = j + 1
                     changed = True
                     continue
-            new_tokens.append(math_tokens[i])
-            new_orig.append(math_to_orig[i])
+            out.append(pairs[i])
             i += 1
-        math_tokens = new_tokens
-        math_to_orig = new_orig
-    # Strip orphaned operators left behind when WORDs are removed
+        pairs = out
+    return pairs
+
+
+def _strip_orphan_ops(pairs, start):
+    """Drop operators left dangling after WORDs were skipped.
+
+    A leading or doubled operator goes away, except a unary minus. A MULOP stays
+    so that the parse fails, instead of silently exposing the numbers after it.
+    """
     changed = True
     while changed:
         changed = False
-        new_tokens = []
-        new_orig = []
-        for i, t in enumerate(math_tokens):
-            typ = t[0]
-            if typ in ("ADDOP", "MULOP"):
-                # Strip leading operator (except unary minus that was truly first)
-                if not new_tokens:
-                    if typ == "MULOP":
-                        # never valid as unary; keep it so parse fails
-                        new_tokens.append(t)
-                        new_orig.append(math_to_orig[i])
+        out = []
+        for i, (t, orig) in enumerate(pairs):
+            if t[0] in ("ADDOP", "MULOP"):
+                prev = out[-1][0][0] if out else None
+                nxt = pairs[i + 1][0][0] if i + 1 < len(pairs) else "EOF"
+                if prev is None or prev in ("ADDOP", "MULOP"):
+                    unary_minus = (
+                        t[0] == "ADDOP"
+                        and t[1] == "-"
+                        and nxt in ("NUM", "LPAREN", "FUNC")
+                        # a leading minus must be the first token of the expression
+                        and (prev is not None or orig == start)
+                    )
+                    if t[0] != "MULOP" and not unary_minus:
+                        changed = True
                         continue
-                    if typ == "ADDOP" and t[1] == "-" and math_to_orig[i] == start:
-                        nxt = math_tokens[i + 1][0] if i + 1 < len(math_tokens) else "EOF"
-                        if nxt in ("NUM", "LPAREN", "FUNC"):
-                            new_tokens.append(t)
-                            new_orig.append(math_to_orig[i])
-                            continue
+                elif nxt in ("EOF", "RPAREN"):
                     changed = True
                     continue
-                prev = new_tokens[-1][0]
-                # Strip operator after another operator (except unary minus)
-                if prev in ("ADDOP", "MULOP"):
-                    if typ == "MULOP":
-                        # keep so parse fails rather than silently exposing trailing numbers
-                        new_tokens.append(t)
-                        new_orig.append(math_to_orig[i])
-                        continue
-                    if typ == "ADDOP" and t[1] == "-":
-                        nxt = math_tokens[i + 1][0] if i + 1 < len(math_tokens) else "EOF"
-                        if nxt in ("NUM", "LPAREN", "FUNC"):
-                            new_tokens.append(t)
-                            new_orig.append(math_to_orig[i])
-                            continue
-                    changed = True
-                    continue
-                # Strip trailing operator (before EOF or RPAREN)
-                nxt = math_tokens[i + 1][0] if i + 1 < len(math_tokens) else "EOF"
-                if nxt in ("EOF", "RPAREN"):
-                    changed = True
-                    continue
-            new_tokens.append(t)
-            new_orig.append(math_to_orig[i])
-        math_tokens = new_tokens
-        math_to_orig = new_orig
-    return math_tokens, math_to_orig
+            out.append((t, orig))
+        pairs = out
+    return pairs
+
+
+def _is_annotation(tokens):
+    """True when the tokens are only balanced parenthetical notes, e.g. "(net 30)"."""
+    depth = 0
+    for t in tokens:
+        if t[0] == "EOF":
+            break
+        if depth == 0 and t[0] != "LPAREN":
+            return False
+        if t[0] == "LPAREN":
+            depth += 1
+        elif t[0] == "RPAREN":
+            depth -= 1
+    return depth == 0
 
 
 def _try_parse(math_tokens):
@@ -890,21 +843,7 @@ def _try_parse(math_tokens):
     try:
         parser = Parser(math_tokens)
         result = parser.parse_expr()
-        if parser.peek()[0] == "EOF":
-            return result, parser.pos
-        depth = 0
-        ok = True
-        for t in math_tokens[parser.pos :]:
-            if t[0] == "EOF":
-                break
-            if depth == 0 and t[0] != "LPAREN":
-                ok = False
-                break
-            if t[0] == "LPAREN":
-                depth += 1
-            elif t[0] == "RPAREN":
-                depth -= 1
-        if ok and depth == 0:
+        if _is_annotation(math_tokens[parser.pos:]):
             return result, parser.pos
         return None, -1
     except (ParseError, ArithmeticError, ValueError):
@@ -945,6 +884,22 @@ def _reduce_date_subexprs(tokens, variables):
                     changed = True
                     break
     return result
+
+
+def _eval_count(tokens, all_vars):
+    """Evaluate tokens to an integer count, or None when they do not resolve."""
+    resolved = []
+    for t in tokens:
+        if t[0] == "WORD":
+            wl = t[1].lower()
+            if wl not in all_vars or isinstance(all_vars[wl], datetime.date):
+                return None
+            resolved.append(("NUM", all_vars[wl], t[2], t[3]))
+        else:
+            resolved.append(t)
+    resolved.append(("EOF", None, 0, 0))
+    value, _ = _try_parse(resolved)
+    return None if value is None else int(value)
 
 
 def _try_date_eval(tokens, variables):
@@ -1041,67 +996,39 @@ def _try_date_eval_inner(tokens, variables):
         return _finish(body[0][1])
 
     # Pattern 2: DATE ± expr duration_unit (supports compound: + 1 week + 3 days)
-    if (
-        len(body) >= 4
-        and body[0][0] == DATE
-        and body[1][0] == "ADDOP"
-    ):
+    if len(body) >= 4 and body[0][0] == DATE and body[1][0] == "ADDOP":
         all_vars = {**BUILTIN_CONSTS, **variables}
         d = body[0][1]
         pos = 1
-        while pos < len(body) and body[pos][0] == "ADDOP":
+        ok = True
+        while ok and pos < len(body) and body[pos][0] == "ADDOP":
             op = body[pos][1]
             pos += 1
-            # Find the next DURATION_WORD to determine segment end
-            dur_pos = None
-            for j in range(pos, len(body)):
-                if (body[j][0] == "WORD"
-                        and body[j][1].lower() in DURATION_UNITS):
-                    dur_pos = j
-                    break
-            if dur_pos is None:
-                break  # no duration unit found, fall through
-            unit = body[dur_pos][1].lower()
-            math_toks = body[pos:dur_pos]
-            if not math_toks:
+            # The segment runs up to the duration unit that closes it
+            dur_pos = next(
+                (j for j in range(pos, len(body))
+                 if body[j][0] == "WORD" and body[j][1].lower() in DURATION_UNITS),
+                None,
+            )
+            if dur_pos is None or dur_pos == pos:
+                ok = False
                 break
-            # Resolve variables in math tokens
-            resolved_math = []
-            for t in math_toks:
-                if t[0] == "WORD":
-                    wl = t[1].lower()
-                    if wl in all_vars and not isinstance(all_vars[wl], datetime.date):
-                        resolved_math.append(("NUM", all_vars[wl], t[2], t[3]))
-                    else:
-                        break  # can't resolve
-                else:
-                    resolved_math.append(t)
-            else:
-                resolved_math.append(("EOF", None, 0, 0))
-                n_val, _ = _try_parse(resolved_math)
-                if n_val is None:
-                    break
-                n = int(n_val)
-                if op == "-":
-                    n = -n
-                if unit in ("day", "days"):
-                    d = d + datetime.timedelta(days=n)
-                elif unit in ("week", "weeks"):
-                    d = d + datetime.timedelta(weeks=n)
-                elif unit in ("month", "months"):
-                    d = _add_months(d, n)
-                elif unit in ("year", "years"):
-                    d = _add_months(d, n * 12)
-                else:
-                    break
-                pos = dur_pos + 1
-                continue
-            break  # for-else break path
-        else:
-            # Loop ended because pos >= len(body) — all tokens consumed
-            return _finish(d)
-        # Check if we consumed all tokens via the continue path
-        if pos >= len(body):
+            n = _eval_count(body[pos:dur_pos], all_vars)
+            if n is None:
+                ok = False
+                break
+            unit = body[dur_pos][1].lower()
+            n = -n if op == "-" else n
+            if unit in ("day", "days"):
+                d = d + datetime.timedelta(days=n)
+            elif unit in ("week", "weeks"):
+                d = d + datetime.timedelta(weeks=n)
+            elif unit in ("month", "months"):
+                d = _add_months(d, n)
+            else:  # year, years
+                d = _add_months(d, n * 12)
+            pos = dur_pos + 1
+        if ok and _is_annotation(body[pos:]):
             return _finish(d)
 
     # Pattern 3: DATE - DATE → number of days
@@ -1157,15 +1084,14 @@ def evaluate_line(text, variables, rates=None, results_acc=None):
         var_name = tokens[0][1].lower()
         pos = 2
 
-    conversion, conv_start, conv_end = _detect_conversion(tokens, rates=rates)
-    eof_idx = len(tokens) - 1
-    math_tokens, _ = _build_math(tokens, pos, conv_start, conv_end, eof_idx, all_vars, conversion)
+    conv = _detect_conversion(tokens, rates=rates)
+    math_tokens, _ = _build_math(tokens, pos, all_vars, conv)
     result, _ = _try_parse(math_tokens)
 
     if result is None:
         return None, variables, False
-    if conversion is not None:
-        dim, from_factor, to_factor = conversion
+    if conv[0] is not None:
+        dim, from_factor, to_factor = conv[0]
         if dim == "temperature":
             result = convert_temperature(result, from_factor, to_factor)
     if var_name:
@@ -1256,8 +1182,38 @@ def format_result(n, fmt_opts=None):
     return str(d)
 
 
+Line = collections.namedtuple(
+    "Line", "clean result fmt_opts variables rates is_total",
+    defaults=(None, None, None, None, False),
+)
+
+
+def _apply_directive(stripped, fmt_opts, rates):
+    """Apply a @rate, @format or @separator line. True when the line was one."""
+    rm = RATE_RE.match(stripped)
+    if rm:
+        rates[(rm.group(1).lower(), rm.group(2).lower())] = Decimal(rm.group(3).strip())
+        return True
+    dm = DIRECTIVE_RE.match(stripped)
+    if not dm:
+        return False
+    key, val = dm.group(1).lower(), dm.group(2).strip()
+    if key == "format":
+        fm = FORMAT_RE.match(val)
+        if fm:
+            mode = fm.group(1).lower()
+            fmt_opts["mode"] = "minSig" if mode == "minsig" else mode
+            if fm.group(2) is not None:
+                fmt_opts["precision"] = int(fm.group(2))
+            else:
+                fmt_opts["precision"] = 10 if mode == "minsig" else 3
+    elif key == "separator" and val.lower() in ("off", "underscore", "comma", "space"):
+        fmt_opts["separator"] = val.lower()
+    return True
+
+
 def _process_lines(content):
-    """Parse and evaluate lines, yielding (clean, result, fmt_opts_snapshot, vars_snapshot, is_total) tuples."""
+    """Evaluate every line of *content*, yielding one Line per input line."""
     lines = content.split("\n")
     if lines and lines[-1] == "":
         lines = lines[:-1]
@@ -1271,55 +1227,146 @@ def _process_lines(content):
         clean = RESULT_RE.sub("", line).rstrip()
         stripped = clean.strip()
 
-        rm = RATE_RE.match(stripped)
-        if rm:
-            fr = rm.group(1).lower()
-            to = rm.group(2).lower()
-            rates[(fr, to)] = Decimal(rm.group(3).strip())
-            yield (clean, None, None, None, False)
-            continue
-
-        dm = DIRECTIVE_RE.match(stripped)
-        if dm:
-            key = dm.group(1).lower()
-            val = dm.group(2).strip()
-            if key == "format":
-                fm = FORMAT_RE.match(val)
-                if fm:
-                    mode = fm.group(1).lower()
-                    fmt_opts["mode"] = MODE_MAP.get(mode, mode)
-                    if fm.group(2) is not None:
-                        fmt_opts["precision"] = int(fm.group(2))
-                    else:
-                        fmt_opts["precision"] = 10 if mode == "minsig" else 3
-            elif key == "separator":
-                v = val.lower()
-                if v in ("off", "underscore", "comma", "space"):
-                    fmt_opts["separator"] = v
-            yield (clean, None, None, None, False)
+        if _apply_directive(stripped, fmt_opts, rates):
+            yield Line(clean)
             continue
 
         if stripped.startswith("#"):
             results_acc.clear()
-            yield (clean, None, None, None, False)
+            yield Line(clean)
             continue
 
         if not stripped:
             results_acc.append(None)
-            yield ("", None, None, None, False)
+            yield Line("")
             continue
 
         vars_before = dict(variables)
-        result, variables, is_total = evaluate_line(stripped, variables, rates=rates, results_acc=results_acc)
+        result, variables, is_total = evaluate_line(
+            stripped, variables, rates=rates, results_acc=results_acc
+        )
+        results_acc.append(result)
+        if result is None:
+            yield Line(clean)
+            continue
+        yield Line(clean, result, dict(fmt_opts), vars_before, dict(rates), is_total)
+        if is_total:
+            results_acc.clear()
 
-        if result is not None:
-            results_acc.append(result)
-            yield (clean, result, dict(fmt_opts), vars_before, is_total)
-            if is_total:
-                results_acc.clear()
-        else:
-            results_acc.append(None)
-            yield (clean, None, None, None, False)
+
+def _split_sections(evaluated):
+    """Split the lines into sections. A header line starts a new section."""
+    sections = []
+    current = []
+    for line in evaluated:
+        if current and line.result is None and line.clean.strip().startswith("#"):
+            sections.append(current)
+            current = []
+        current.append(line)
+    if current:
+        sections.append(current)
+    return sections
+
+
+def _total_indicators(section):
+    """Mark the lines that feed a total ("|") and the total lines themselves."""
+    indicators = [None] * len(section)
+    for i, line in enumerate(section):
+        if not line.is_total:
+            continue
+        indicators[i] = "\u2518"
+        for j in range(i - 1, -1, -1):  # back to the previous total
+            if section[j].is_total:
+                break
+            if section[j].result is not None:
+                indicators[j] = "\u2502"
+    return indicators
+
+
+def _align_decimals(fmt_strs):
+    """Left-pad plain numbers so that their decimal points line up."""
+    int_widths = {}
+    for i, s in enumerate(fmt_strs):
+        if s is not None and ALIGNABLE_RE.match(s):
+            dot = s.find(".")
+            int_widths[i] = dot if dot >= 0 else len(s)
+    if len(int_widths) < 2:
+        return list(fmt_strs)
+    max_int_w = max(int_widths.values())
+    return [
+        " " * (max_int_w - int_widths[i]) + s if i in int_widths else s
+        for i, s in enumerate(fmt_strs)
+    ]
+
+
+def _format_section(section, use_color):
+    """Format one section into plain and colored output lines."""
+    widths = [len(l.clean) for l in section if l.result is not None]
+    align = max(max(widths) + 2, 40) if widths else 40
+
+    fmt_strs = _align_decimals([
+        format_result(l.result, l.fmt_opts) if l.result is not None else None
+        for l in section
+    ])
+    indicators = _total_indicators(section)
+    ind_width = max(
+        [len(f) for f, ind in zip(fmt_strs, indicators) if ind and f is not None],
+        default=0,
+    )
+
+    out = []
+    col = []
+    for line, fmt_str, indicator in zip(section, fmt_strs, indicators):
+        if line.result is None:
+            out.append(line.clean)
+            if use_color:
+                col.append(colorize_line(line.clean, None, None, align, None))
+            continue
+        padded = fmt_str.ljust(ind_width) if indicator else fmt_str
+        suffix = f" {indicator}" if indicator else ""
+        out.append(f"{line.clean.ljust(align)}# => {padded}{suffix}")
+        if use_color:
+            col.append(colorize_line(line.clean, line.result, padded, align,
+                                     line.variables, rates=line.rates,
+                                     indicator=indicator))
+    return out, col
+
+
+def _color_enabled(no_color):
+    """True when the terminal accepts ANSI colors."""
+    return (
+        not no_color
+        and sys.stdout.isatty()
+        and not os.environ.get("NO_COLOR", "")
+        and os.environ.get("TERM") != "dumb"
+    )
+
+
+def _diff_color(line):
+    """ANSI color for one unified-diff line."""
+    if line.startswith(("---", "+++")):
+        return BOLD
+    if line.startswith("@@"):
+        return CYAN
+    if line.startswith("-"):
+        return RED
+    if line.startswith("+"):
+        return GREEN
+    return ""
+
+
+def _write_diff(filepath, original, new_content, no_color):
+    """Print a unified diff of the pending changes."""
+    diff = difflib.unified_diff(
+        original.splitlines(keepends=True),
+        new_content.splitlines(keepends=True),
+        fromfile=filepath,
+        tofile=filepath,
+    )
+    color = _color_enabled(no_color)
+    for line in diff:
+        c = _diff_color(line) if color else ""
+        sys.stdout.write((c + line + RESET) if c else line)
 
 
 def process_file(filepath, show=False, no_color=False, stdin_content=None, dry_run=False):
@@ -1330,177 +1377,40 @@ def process_file(filepath, show=False, no_color=False, stdin_content=None, dry_r
         with open(filepath, "r") as f:
             original = f.read()
 
-    use_color = (
-        show
-        and not no_color
-        and sys.stdout.isatty()
-        and not os.environ.get("NO_COLOR", "")
-        and os.environ.get("TERM") != "dumb"
-    )
-
-    evaluated = list(_process_lines(original))
-
-    # Format output with per-section alignment (sections split at header lines)
-    def _flush_section(section):
-        """Compute alignment for a section and format its lines."""
-        result_lines = [c for c, r, _, _, _ in section if r is not None]
-        if result_lines:
-            max_len = max(len(l) for l in result_lines)
-            align = max(max_len + 2, 40)
-        else:
-            align = 40
-
-        # First pass: format all results and compute decimal alignment info
-        fmt_results = []
-        for clean, result, opts, vsnap, is_total in section:
-            if result is not None:
-                fmt_str = format_result(result, opts)
-                if ALIGNABLE_RE.match(fmt_str):
-                    dot = fmt_str.find(".")
-                    int_w = dot if dot >= 0 else len(fmt_str)
-                    frac_w = len(fmt_str) - int_w
-                else:
-                    int_w = frac_w = None
-                fmt_results.append((fmt_str, int_w, frac_w))
-            else:
-                fmt_results.append((None, None, None))
-
-        # Compute effective max integer width for decimal alignment
-        alignable = [(f, iw, fw) for f, iw, fw in fmt_results if iw is not None]
-        if len(alignable) >= 2:
-            max_int_w = max(iw for _, iw, _ in alignable)
-            eff_max_int = max_int_w
-        else:
-            eff_max_int = 0
-
-        # Compute total indicators (│ for contributors, ┘ for total lines)
-        indicators = [None] * len(section)
-        for i, (_, _, _, _, is_total) in enumerate(section):
-            if is_total:
-                indicators[i] = "┘"
-                # Mark prior result lines back to previous total or section start
-                for j in range(i - 1, -1, -1):
-                    _, r, _, _, jt = section[j]
-                    if jt:
-                        break  # stop at previous total
-                    if r is not None:
-                        indicators[j] = "│"
-
-        # Compute padded fmt_str for each line
-        padded_fmts = []
-        for (fmt_raw, int_w, frac_w) in fmt_results:
-            if fmt_raw is not None:
-                fmt_str = fmt_raw
-                if int_w is not None and eff_max_int > 0:
-                    pad = max(eff_max_int - int_w, 0)
-                    fmt_str = " " * pad + fmt_str
-                padded_fmts.append(fmt_str)
-            else:
-                padded_fmts.append(None)
-
-        # Compute max result width among lines with indicators for alignment
-        max_indicator_w = 0
-        for idx, fmt_str in enumerate(padded_fmts):
-            if indicators[idx] and fmt_str is not None:
-                max_indicator_w = max(max_indicator_w, len(fmt_str))
-
-        out = []
-        col = []
-        for idx, ((clean, result, opts, vsnap, is_total), fmt_str) in enumerate(zip(section, padded_fmts)):
-            indicator = indicators[idx]
-            if result is not None:
-                if indicator:
-                    padded = fmt_str.ljust(max_indicator_w)
-                    suffix = f" {indicator}"
-                else:
-                    padded = fmt_str
-                    suffix = ""
-                out.append(f"{clean.ljust(align)}# => {padded}{suffix}")
-                if use_color:
-                    col.append(
-                        colorize_line(clean, result, padded, align, vsnap, rates=rates, indicator=indicator)
-                    )
-            else:
-                out.append(clean)
-                if use_color:
-                    col.append(colorize_line(clean, None, None, align, None, rates=rates))
-        return out, col
+    use_color = show and _color_enabled(no_color)
 
     output = []
     colored_output = []
-    current_section = []
-    for entry in evaluated:
-        clean, result, opts, vsnap, _ = entry
-        # Header lines start a new section
-        if result is None and clean.strip().startswith("#"):
-            if current_section:
-                out, col = _flush_section(current_section)
-                output.extend(out)
-                colored_output.extend(col)
-                current_section = []
-            # The header itself is a standalone entry
-            current_section.append(entry)
-        else:
-            current_section.append(entry)
-    if current_section:
-        out, col = _flush_section(current_section)
+    for section in _split_sections(_process_lines(original)):
+        out, col = _format_section(section, use_color)
         output.extend(out)
         colored_output.extend(col)
 
     new_content = "\n".join(output) + "\n"
+    changed = new_content != original
+
     if show:
-        if use_color:
-            sys.stdout.write("\n".join(colored_output) + "\n")
-        else:
-            sys.stdout.write(new_content)
-        return new_content != original
-    if dry_run:
-        if new_content != original:
-            diff = list(difflib.unified_diff(
-                original.splitlines(keepends=True),
-                new_content.splitlines(keepends=True),
-                fromfile=filepath,
-                tofile=filepath,
-            ))
-            color_diff = (
-                not no_color
-                and sys.stdout.isatty()
-                and not os.environ.get("NO_COLOR", "")
-                and os.environ.get("TERM") != "dumb"
-            )
-            if color_diff:
-                for line in diff:
-                    if line.startswith("---") or line.startswith("+++"):
-                        sys.stdout.write(BOLD + line + RESET)
-                    elif line.startswith("@@"):
-                        sys.stdout.write(CYAN + line + RESET)
-                    elif line.startswith("-"):
-                        sys.stdout.write(RED + line + RESET)
-                    elif line.startswith("+"):
-                        sys.stdout.write(GREEN + line + RESET)
-                    else:
-                        sys.stdout.write(line)
-            else:
-                sys.stdout.writelines(diff)
-            return True
-        return False
-    if new_content != original:
+        sys.stdout.write("\n".join(colored_output) + "\n" if use_color else new_content)
+    elif dry_run:
+        if changed:
+            _write_diff(filepath, original, new_content, no_color)
+    elif changed:
         with open(filepath, "w") as f:
             f.write(new_content)
-        return True
-    return False
+    return changed
 
 
 def process_json(content):
     """Evaluate content and return structured results as a list of dicts."""
     output = []
-    for clean, result, _opts, _vars, _is_total in _process_lines(content):
-        if result is None:
-            output.append({"input": clean, "result": None})
-        elif isinstance(result, datetime.date):
-            output.append({"input": clean, "result": result.isoformat()})
+    for line in _process_lines(content):
+        if line.result is None:
+            value = None
+        elif isinstance(line.result, datetime.date):
+            value = line.result.isoformat()
         else:
-            output.append({"input": clean, "result": float(result)})
+            value = float(line.result)
+        output.append({"input": line.clean, "result": value})
     return output
 
 
@@ -1518,7 +1428,7 @@ def watch_file(filepath, show=False, no_color=False, interval=0.5):
                         sys.stderr.flush()
                     if process_file(filepath, show=show, no_color=no_color):
                         if not show:
-                            print(f"  Updated results.")
+                            print("  Updated results.")
                     last_mtime = os.path.getmtime(filepath)
             except FileNotFoundError:
                 pass
@@ -1588,11 +1498,10 @@ def main():
         parser.error("--watch cannot be used with --url, --json, or --dry-run")
 
     if args.file == "-":
+        content = sys.stdin.read()
         if args.json:
-            content = sys.stdin.read()
             print(json.dumps(process_json(content), indent=2))
         else:
-            content = sys.stdin.read()
             process_file(None, show=True, no_color=args.no_color, stdin_content=content)
         return
 

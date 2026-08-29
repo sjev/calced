@@ -211,6 +211,13 @@ const CTX_PREC = 28;
 const P = (x) => x.prec(CTX_PREC);
 
 const MAX_RESULT_DIGITS = 1000;
+const DEFAULT_FMT_OPTS = { mode: "minSig", precision: 10, separator: "underscore" };
+
+// "%" is modulo here; a "%" that follows a number is tokenized as PCT instead.
+const SINGLE_CHAR_TOKENS = {
+  "+": "ADDOP", "-": "ADDOP", "*": "MULOP", "/": "MULOP", "%": "MULOP",
+  "^": "POW", "(": "LPAREN", ")": "RPAREN", ",": "COMMA", "=": "EQ",
+};
 
 // --- SI Prefixes ---
 const SI_PREFIX = {
@@ -433,14 +440,8 @@ function tokenize(text) {
       }
       continue;
     }
-    if (text[i] === "+" || text[i] === "-") { tokens.push(["ADDOP", text[i], start, i+1]); i++; continue; }
-    if (text[i] === "*" || text[i] === "/") { tokens.push(["MULOP", text[i], start, i+1]); i++; continue; }
-    if (text[i] === "^") { tokens.push(["POW", "^", start, i+1]); i++; continue; }
-    if (text[i] === "%") { tokens.push(["MULOP", "%", start, i+1]); i++; continue; }
-    if (text[i] === "(") { tokens.push(["LPAREN", "(", start, i+1]); i++; continue; }
-    if (text[i] === ")") { tokens.push(["RPAREN", ")", start, i+1]); i++; continue; }
-    if (text[i] === ",") { tokens.push(["COMMA", ",", start, i+1]); i++; continue; }
-    if (text[i] === "=") { tokens.push(["EQ", "=", start, i+1]); i++; continue; }
+    const single = SINGLE_CHAR_TOKENS[text[i]];
+    if (single) { tokens.push([single, text[i], start, i+1]); i++; continue; }
     const wm = slice.match(/^[a-zA-Z_]\w*/);
     if (wm) {
       const word = wm[0];
@@ -616,9 +617,12 @@ function _detectConversion(tokens, rates) {
   return [null, eofIdx, eofIdx];
 }
 
-function _buildMath(tokens, start, convStart, convEnd, eofIdx, allVars, conversion) {
-  const mathTokens = [];
-  const mathToOrig = [];
+function _buildMath(tokens, start, allVars, conv) {
+  // conv is the triple returned by _detectConversion. Returns
+  // [mathTokens, mathToOrig], where mathToOrig[i] is the original token index
+  // that mathTokens[i] came from.
+  const [conversion, convStart, convEnd] = conv;
+  let pairs = [];  // [token, original index]
   let parenDepth = 0;
   for (let idx = start; idx < tokens.length; idx++) {
     const t = tokens[idx];
@@ -627,131 +631,112 @@ function _buildMath(tokens, start, convStart, convEnd, eofIdx, allVars, conversi
       if (idx === convStart && conversion) {
         const [dim, fromFactor, toFactor] = conversion;
         if (dim !== "temperature") {
-          const ff = fromFactor instanceof Big ? fromFactor : new Big(fromFactor);
-          const tf = toFactor instanceof Big ? toFactor : new Big(toFactor);
-          const factor = ff.div(tf);
-          mathTokens.push(["MULOP", "*", t[2], t[3]]);
-          mathToOrig.push(idx);
-          mathTokens.push(["NUM", factor, t[2], t[3]]);
-          mathToOrig.push(idx);
+          const factor = new Big(fromFactor).div(new Big(toFactor));
+          pairs.push([["MULOP", "*", t[2], t[3]], idx]);
+          pairs.push([["NUM", factor, t[2], t[3]], idx]);
         }
       }
       continue;
     }
     if (t[0] === "WORD") {
-      const wl = t[1].toLowerCase();
-      if (wl in allVars) {
-        const v = allVars[wl];
-        if (!_isDateObj(v)) {
-          mathTokens.push(["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]]);
-          mathToOrig.push(idx);
-        }
+      const v = allVars[t[1].toLowerCase()];
+      if (v !== undefined && !_isDateObj(v)) {
+        pairs.push([["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]], idx]);
       }
     } else if (t[0] === "TOTAL") {
-      if ("total" in allVars) {
-        const v = allVars["total"];
-        mathTokens.push(["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]]);
-        mathToOrig.push(idx);
+      const v = allVars["total"];
+      if (v !== undefined) {
+        pairs.push([["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]], idx]);
       }
-    } else if (t[0] === "EQ" || t[0] === "DATE") {
-      // skip
-    } else if (t[0] === "COMMA" && parenDepth === 0) {
-      // skip
+    } else if (t[0] === "EQ" || t[0] === "DATE" || (t[0] === "COMMA" && parenDepth === 0)) {
+      // not part of the math
     } else {
       if (t[0] === "LPAREN") parenDepth++;
       else if (t[0] === "RPAREN") parenDepth--;
-      mathTokens.push(t);
-      mathToOrig.push(idx);
+      pairs.push([t, idx]);
     }
   }
-  // Strip empty parentheses (and parens containing only commas) left behind
-  let mt = mathTokens, mo = mathToOrig, changed = true;
+
+  pairs = _stripEmptyParens(pairs);
+  pairs = _stripOrphanOps(pairs, start);
+  return [pairs.map(p => p[0]), pairs.map(p => p[1])];
+}
+
+// Drop parens left empty (or holding only commas) after WORDs were skipped.
+function _stripEmptyParens(pairs) {
+  let changed = true;
   while (changed) {
     changed = false;
-    const nt = [], no = [];
+    const out = [];
     let i = 0;
-    while (i < mt.length) {
-      if (mt[i][0] === "LPAREN") {
-        let j = i + 1, onlyCommas = true;
-        while (j < mt.length && mt[j][0] !== "RPAREN") {
-          if (mt[j][0] !== "COMMA") { onlyCommas = false; break; }
-          j++;
-        }
-        if (onlyCommas && j < mt.length && mt[j][0] === "RPAREN") {
+    while (i < pairs.length) {
+      if (pairs[i][0][0] === "LPAREN") {
+        let j = i + 1;
+        while (j < pairs.length && pairs[j][0][0] === "COMMA") j++;
+        if (j < pairs.length && pairs[j][0][0] === "RPAREN") {
           i = j + 1;
           changed = true;
           continue;
         }
       }
-      nt.push(mt[i]);
-      no.push(mo[i]);
+      out.push(pairs[i]);
       i++;
     }
-    mt = nt;
-    mo = no;
+    pairs = out;
   }
-  // Strip orphaned operators left behind when WORDs are removed
-  changed = true;
-  while (changed) {
-    changed = false;
-    const nt = [], no = [];
-    for (let i = 0; i < mt.length; i++) {
-      const typ = mt[i][0];
-      if (typ === "ADDOP" || typ === "MULOP") {
-        // Strip leading operator (except unary minus that was truly first)
-        if (nt.length === 0) {
-          if (typ === "MULOP") {
-            // never valid as unary; keep it so parse fails
-            nt.push(mt[i]); no.push(mo[i]); continue;
-          }
-          if (typ === "ADDOP" && mt[i][1] === "-" && mo[i] === start) {
-            const nxt = i + 1 < mt.length ? mt[i + 1][0] : "EOF";
-            if (nxt === "NUM" || nxt === "LPAREN" || nxt === "FUNC") {
-              nt.push(mt[i]); no.push(mo[i]); continue;
-            }
-          }
-          changed = true; continue;
-        }
-        const prev = nt[nt.length - 1][0];
-        // Strip operator after another operator (except unary minus)
-        if (prev === "ADDOP" || prev === "MULOP") {
-          if (typ === "MULOP") {
-            // keep so parse fails rather than silently exposing trailing numbers
-            nt.push(mt[i]); no.push(mo[i]); continue;
-          }
-          if (typ === "ADDOP" && mt[i][1] === "-") {
-            const nxt = i + 1 < mt.length ? mt[i + 1][0] : "EOF";
-            if (nxt === "NUM" || nxt === "LPAREN" || nxt === "FUNC") {
-              nt.push(mt[i]); no.push(mo[i]); continue;
-            }
-          }
-          changed = true; continue;
-        }
-        // Strip trailing operator (before EOF or RPAREN)
-        const nxt = i + 1 < mt.length ? mt[i + 1][0] : "EOF";
-        if (nxt === "EOF" || nxt === "RPAREN") { changed = true; continue; }
-      }
-      nt.push(mt[i]); no.push(mo[i]);
-    }
-    mt = nt; mo = no;
-  }
-  return [mt, mo];
+  return pairs;
 }
 
+// Drop operators left dangling after WORDs were skipped. A leading or doubled
+// operator goes away, except a unary minus. A MULOP stays so that the parse
+// fails, instead of silently exposing the numbers after it.
+function _stripOrphanOps(pairs, start) {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const out = [];
+    for (let i = 0; i < pairs.length; i++) {
+      const [t, orig] = pairs[i];
+      if (t[0] === "ADDOP" || t[0] === "MULOP") {
+        const prev = out.length ? out[out.length - 1][0][0] : null;
+        const nxt = i + 1 < pairs.length ? pairs[i + 1][0][0] : "EOF";
+        if (prev === null || prev === "ADDOP" || prev === "MULOP") {
+          const unaryMinus = t[0] === "ADDOP" && t[1] === "-"
+            && (nxt === "NUM" || nxt === "LPAREN" || nxt === "FUNC")
+            // a leading minus must be the first token of the expression
+            && (prev !== null || orig === start);
+          if (t[0] !== "MULOP" && !unaryMinus) { changed = true; continue; }
+        } else if (nxt === "EOF" || nxt === "RPAREN") {
+          changed = true;
+          continue;
+        }
+      }
+      out.push([t, orig]);
+    }
+    pairs = out;
+  }
+  return pairs;
+}
+
+// True when the tokens are only balanced parenthetical notes, e.g. "(net 30)".
+function _isAnnotation(tokens) {
+  let depth = 0;
+  for (const t of tokens) {
+    if (t[0] === "EOF") break;
+    if (depth === 0 && t[0] !== "LPAREN") return false;
+    if (t[0] === "LPAREN") depth++;
+    else if (t[0] === "RPAREN") depth--;
+  }
+  return depth === 0;
+}
+
+// Parse math tokens, allowing trailing balanced parenthetical annotations.
+// Returns [result, consumed] on success, or [null, -1] on failure.
 function _tryParse(mathTokens) {
   try {
     const parser = new Parser(mathTokens);
     const result = parser.parseExpr();
-    if (parser.peek()[0] === "EOF") return [result, parser.pos];
-    let depth = 0, ok = true;
-    for (let k = parser.pos; k < mathTokens.length; k++) {
-      const tt = mathTokens[k][0];
-      if (tt === "EOF") break;
-      if (depth === 0 && tt !== "LPAREN") { ok = false; break; }
-      if (tt === "LPAREN") depth++;
-      else if (tt === "RPAREN") depth--;
-    }
-    if (ok && depth === 0) return [result, parser.pos];
+    if (_isAnnotation(mathTokens.slice(parser.pos))) return [result, parser.pos];
     return [null, -1];
   } catch (e) {
     return [null, -1];
@@ -786,6 +771,23 @@ function _reduceDateSubexprs(tokens, variables) {
     }
   }
   return result;
+}
+
+// Evaluate tokens to an integer count, or null when they do not resolve.
+function _evalCount(tokens, allVars) {
+  const resolved = [];
+  for (const t of tokens) {
+    if (t[0] === "WORD") {
+      const v = allVars[t[1].toLowerCase()];
+      if (v === undefined || _isDateObj(v)) return null;
+      resolved.push(["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]]);
+    } else {
+      resolved.push(t);
+    }
+  }
+  resolved.push(["EOF", null, 0, 0]);
+  const [value] = _tryParse(resolved);
+  return value === null ? null : Math.trunc(value.toNumber());
 }
 
 function _tryDateEval(tokens, variables) {
@@ -863,19 +865,17 @@ function _tryDateEvalInner(tokens, variables) {
   }
 
   // Pattern 2: DATE ± expr duration_unit (supports compound: + 1 week + 3 days)
-  if (body.length >= 4
-      && body[0][0] === "DATE"
-      && body[1][0] === "ADDOP") {
+  if (body.length >= 4 && body[0][0] === "DATE" && body[1][0] === "ADDOP") {
     const allVars = Object.create(null);
     for (const k in BUILTIN_CONSTS) allVars[k] = BUILTIN_CONSTS[k];
     for (const k in variables) allVars[k] = variables[k];
     let d = body[0][1];
     let pos = 1;
     let ok = true;
-    while (pos < body.length && body[pos][0] === "ADDOP") {
+    while (ok && pos < body.length && body[pos][0] === "ADDOP") {
       const op = body[pos][1];
       pos++;
-      // Find next DURATION_WORD
+      // The segment runs up to the duration unit that closes it
       let durPos = -1;
       for (let j = pos; j < body.length; j++) {
         if (body[j][0] === "WORD" && DURATION_UNITS.has(body[j][1].toLowerCase())) {
@@ -883,36 +883,18 @@ function _tryDateEvalInner(tokens, variables) {
           break;
         }
       }
-      if (durPos < 0) { ok = false; break; }
+      if (durPos < 0 || durPos === pos) { ok = false; break; }
+      let n = _evalCount(body.slice(pos, durPos), allVars);
+      if (n === null) { ok = false; break; }
       const unit = body[durPos][1].toLowerCase();
-      const midTokens = body.slice(pos, durPos);
-      if (!midTokens.length) { ok = false; break; }
-      // Resolve variables
-      const resolvedMid = [];
-      let resolved = true;
-      for (const t of midTokens) {
-        if (t[0] === "WORD") {
-          const wl = t[1].toLowerCase();
-          if (wl in allVars && !_isDateObj(allVars[wl])) {
-            const v = allVars[wl];
-            resolvedMid.push(["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]]);
-          } else { resolved = false; break; }
-        } else resolvedMid.push(t);
-      }
-      if (!resolved) { ok = false; break; }
-      resolvedMid.push(["EOF", null, 0, 0]);
-      const [nVal] = _tryParse(resolvedMid);
-      if (nVal === null) { ok = false; break; }
-      let n = Math.round(nVal.toNumber());
       if (op === "-") n = -n;
       if (unit === "day" || unit === "days") d = _dateAddDays(d, n);
       else if (unit === "week" || unit === "weeks") d = _dateAddDays(d, n * 7);
       else if (unit === "month" || unit === "months") d = _dateAddMonths(d, n);
-      else if (unit === "year" || unit === "years") d = _dateAddMonths(d, n * 12);
-      else { ok = false; break; }
+      else d = _dateAddMonths(d, n * 12);  // year, years
       pos = durPos + 1;
     }
-    if (ok && pos >= body.length) return _finish(d);
+    if (ok && _isAnnotation(body.slice(pos))) return _finish(d);
   }
 
   // Pattern 3: DATE - DATE → number of days
@@ -953,13 +935,12 @@ function evaluateLine(text, variables, rates, resultsAcc) {
     varName = tokens[0][1].toLowerCase();
     pos = 2;
   }
-  const [conversion, convStart, convEnd] = _detectConversion(tokens, rates);
-  const eofIdx = tokens.length - 1;
-  const [mathTokens] = _buildMath(tokens, pos, convStart, convEnd, eofIdx, allVars, conversion);
+  const conv = _detectConversion(tokens, rates);
+  const [mathTokens] = _buildMath(tokens, pos, allVars, conv);
   let [result] = _tryParse(mathTokens);
   if (result === null) return [null, variables, false];
-  if (conversion !== null) {
-    const [dim, fromFactor, toFactor] = conversion;
+  if (conv[0] !== null) {
+    const [dim, fromFactor, toFactor] = conv[0];
     if (dim === "temperature") result = convertTemperature(result, fromFactor, toFactor);
   }
   if (varName) {
@@ -997,7 +978,7 @@ function _strip(s) {
 // Python engine agree. Rounding is half-even in every mode.
 function formatResult(n, fmtOpts) {
   if (_isDateObj(n)) return _dateToISO(n);
-  if (!fmtOpts) fmtOpts = { mode: "minSig", precision: 10, separator: "underscore" };
+  if (!fmtOpts) fmtOpts = DEFAULT_FMT_OPTS;
   const d = n instanceof Big ? n : new Big(n);
   const mode = fmtOpts.mode;
   const prec = fmtOpts.precision;
@@ -1063,40 +1044,36 @@ function classifyLine(text, variables, rates) {
   if (DIRECTIVE_RE.test(stripped)) return "directive";
   if (RATE_RE.test(stripped)) return "directive";
 
+  variables = variables || Object.create(null);
   let tokens = tokenize(text);
   const allNames = new Set();
   for (const k in BUILTIN_CONSTS) allNames.add(k);
-  if (variables) { for (const k in variables) allNames.add(k); }
+  for (const k in variables) allNames.add(k);
 
-  let hasDate = tokens.some(t => t[0] === "DATE" && t[0] !== "EOF");
-  if (!hasDate && variables) {
-    for (const t of tokens) {
-      if (t[0] === "WORD" && _isDateObj(variables[t[1].toLowerCase()])) { hasDate = true; break; }
-    }
-  }
+  const hasDate = tokens.some(t =>
+    t[0] === "DATE" || (t[0] === "WORD" && _isDateObj(variables[t[1].toLowerCase()]))
+  );
 
   const hasMath = tokens.some(t =>
-    t[0] !== "EOF" && (
-      t[0] === "NUM" || t[0] === "PCT" || t[0] === "FUNC" || t[0] === "TOTAL" || t[0] === "DATE"
-      || (t[0] === "WORD" && allNames.has(t[1].toLowerCase()))
-    )
+    t[0] === "NUM" || t[0] === "PCT" || t[0] === "FUNC" || t[0] === "TOTAL" || t[0] === "DATE"
+    || (t[0] === "WORD" && allNames.has(t[1].toLowerCase()))
   );
 
   const active = new Set();
 
   if (hasDate && hasMath) {
-    const dateResult = _tryDateEval(tokens, variables || Object.create(null));
-    if (dateResult !== null) {
+    // A date expression is active as a whole
+    if (_tryDateEval(tokens, variables) !== null) {
       for (let i = 0; i < tokens.length; i++) {
         if (tokens[i][0] !== "EOF") active.add(i);
       }
     } else {
-      tokens = _reduceDateSubexprs(tokens, variables || Object.create(null));
+      tokens = _reduceDateSubexprs(tokens, variables);
     }
   }
   if (hasMath && active.size === 0) {
     if (tokens.some(t => t[0] === "TOTAL")
-        && !tokens.some(t => t[0] !== "EOF" && (t[0] === "NUM" || t[0] === "PCT" || t[0] === "OP" || t[0] === "FUNC" || t[0] === "WORD" || t[0] === "LPAREN"))) {
+        && !tokens.some(t => t[0] === "NUM" || t[0] === "PCT" || t[0] === "FUNC" || t[0] === "WORD" || t[0] === "LPAREN")) {
       for (let i = 0; i < tokens.length; i++) {
         if (tokens[i][0] === "TOTAL") active.add(i);
       }
@@ -1108,17 +1085,17 @@ function classifyLine(text, variables, rates) {
         mathStart = 2;
       }
 
-      const [conversion, convStart, convEnd] = _detectConversion(tokens, rates);
-      const eofIdx = tokens.length - 1;
+      const conv = _detectConversion(tokens, rates);
+      const [conversion, convStart, convEnd] = conv;
       if (conversion !== null) {
         for (let ci = convStart; ci < convEnd; ci++) active.add(ci);
       }
 
       const allVars = Object.create(null);
       for (const k in BUILTIN_CONSTS) allVars[k] = BUILTIN_CONSTS[k];
-      if (variables) { for (const k in variables) allVars[k] = variables[k]; }
+      for (const k in variables) allVars[k] = variables[k];
       allVars['total'] = 0; allVars['sum'] = 0;
-      const [mathTokens, mathToOrig] = _buildMath(tokens, mathStart, convStart, convEnd, eofIdx, allVars, conversion);
+      const [mathTokens, mathToOrig] = _buildMath(tokens, mathStart, allVars, conv);
       const [result, consumed] = _tryParse(mathTokens);
 
       if (result !== null) {
@@ -1200,39 +1177,56 @@ function computeTotalIndicators(output, lines) {
   return indicators;
 }
 
+// Pad numbers so that decimal points line up within each section.
+//   mode "frac": right-pad the fraction (web, used with text-align:right)
+//   mode "int":  left-pad the integer part (file export)
 function alignDecimalPoints(output, lines, mode) {
-  // mode: "frac" for web (right-pad frac, used with text-align:right)
-  //        "int" for file export (left-pad int part)
   const aligned = output.map(o => o.result);
-  const sections = splitSections(output, lines);
-
-  for (const sec of sections) {
+  for (const sec of splitSections(output, lines)) {
     const info = [];
     for (const i of sec) {
       const r = aligned[i];
       if (r !== null && ALIGNABLE_RE.test(r)) {
         const dot = r.indexOf(".");
         const intW = dot >= 0 ? dot : r.length;
-        const fracW = r.length - intW;
-        info.push({ i, intW, fracW });
+        info.push({ i, width: mode === "frac" ? r.length - intW : intW });
       }
     }
     if (info.length < 2) continue;
-    const maxIntW = Math.max(...info.map(x => x.intW));
-    const maxFracW = Math.max(...info.map(x => x.fracW));
-    if (mode === "frac") {
-      for (const x of info) {
-        const pad = Math.max(maxFracW - x.fracW, 0);
-        if (pad > 0) aligned[x.i] = aligned[x.i] + "\u00a0".repeat(pad);
-      }
-    } else {
-      for (const x of info) {
-        const pad = Math.max(maxIntW - x.intW, 0);
-        if (pad > 0) aligned[x.i] = " ".repeat(pad) + aligned[x.i];
-      }
+    const maxWidth = Math.max(...info.map(x => x.width));
+    for (const x of info) {
+      const pad = maxWidth - x.width;
+      if (pad <= 0) continue;
+      aligned[x.i] = mode === "frac"
+        ? aligned[x.i] + "\u00a0".repeat(pad)
+        : " ".repeat(pad) + aligned[x.i];
     }
   }
   return aligned;
+}
+
+// Apply a @rate, @format or @separator line. True when the line was one.
+function applyDirective(stripped, fmtOpts, rates) {
+  const rm = stripped.match(RATE_RE);
+  if (rm) {
+    rates[rm[1].toLowerCase() + "/" + rm[2].toLowerCase()] = new Big(rm[3].trim());
+    return true;
+  }
+  const dm = stripped.match(DIRECTIVE_RE);
+  if (!dm) return false;
+  const key = dm[1].toLowerCase();
+  const val = dm[2].trim();
+  if (key === "format") {
+    const fm = val.match(FORMAT_RE);
+    if (fm) {
+      const mode = fm[1].toLowerCase();
+      fmtOpts.mode = mode === "minsig" ? "minSig" : mode;
+      fmtOpts.precision = fm[2] !== undefined ? parseInt(fm[2]) : (mode === "minsig" ? 10 : 3);
+    }
+  } else if (key === "separator" && ["off", "underscore", "comma", "space"].includes(val.toLowerCase())) {
+    fmtOpts.separator = val.toLowerCase();
+  }
+  return true;
 }
 
 function processText(text) {
@@ -1240,37 +1234,13 @@ function processText(text) {
   let variables = Object.create(null);
   const rates = Object.create(null);
   let resultsAcc = [];
-  let fmtOpts = { mode: "minSig", precision: 10, separator: "underscore" };
+  const fmtOpts = { ...DEFAULT_FMT_OPTS };
   const output = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (const line of lines) {
     const stripped = line.trim();
-    const rm = stripped.match(RATE_RE);
-    if (rm) {
-      const cls = classifyLine(line, variables, rates);
-      const fr = rm[1].toLowerCase();
-      const to = rm[2].toLowerCase();
-      rates[fr + "/" + to] = new Big(rm[3].trim());
-      output.push({ result: null, cls });
-      continue;
-    }
     const cls = classifyLine(line, variables, rates);
-    const dm = stripped.match(DIRECTIVE_RE);
-    if (dm) {
-      const key = dm[1].toLowerCase();
-      const val = dm[2].trim();
-      if (key === "format") {
-        const fm = val.match(FORMAT_RE);
-        if (fm) {
-          const modeRaw = fm[1].toLowerCase();
-          const modeMap = { minsig: "minSig", fixed: "fixed", scientific: "scientific", eng: "eng", auto: "auto" };
-          fmtOpts.mode = modeMap[modeRaw] || modeRaw;
-          fmtOpts.precision = fm[2] !== undefined ? parseInt(fm[2]) : (modeRaw === "minsig" ? 10 : 3);
-        }
-      } else if (key === "separator") {
-        const v = val.toLowerCase();
-        if (["off","underscore","comma","space"].includes(v)) fmtOpts.separator = v;
-      }
+
+    if (applyDirective(stripped, fmtOpts, rates)) {
       output.push({ result: null, cls });
       continue;
     }
@@ -1284,16 +1254,16 @@ function processText(text) {
       output.push({ result: null, cls });
       continue;
     }
+
     const [result, newVars, isTotal] = evaluateLine(stripped, variables, rates, resultsAcc);
     variables = newVars;
-    if (result !== null) {
-      resultsAcc.push(result);
-      output.push({ result: formatResult(result, { ...fmtOpts }), cls, isTotal });
-      if (isTotal) resultsAcc = [];
-    } else {
-      resultsAcc.push(null);
+    resultsAcc.push(result);
+    if (result === null) {
       output.push({ result: null, cls });
+      continue;
     }
+    output.push({ result: formatResult(result, fmtOpts), cls, isTotal });
+    if (isTotal) resultsAcc = [];
   }
   const aligned = alignDecimalPoints(output, lines, "int");
   for (let i = 0; i < output.length; i++) output[i].result = aligned[i];

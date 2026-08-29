@@ -28,3 +28,9 @@ deadline - 2025-06-15                   # => 14
 100                                     # => 100        │
 200                                     # => 200        │
 total                                   # => 300        ┘
+
+# Trailing Text After a Date Expression
+
+2025-01-01 + 30 days (net 30)           # => 2025-01-31
+2025-01-01 + 1 day rescheduled          # => 1
+2025-01-01 + 1.5 days                   # => 2025-01-02
