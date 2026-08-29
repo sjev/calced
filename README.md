@@ -45,10 +45,7 @@ Requires Python 3.9+. Any typical Python install method works (`pip install calc
 
 ```sh
 # Install as a CLI tool
-uv tool install calced
-
-# Or run without installing
-uvx calced <file>
+uv tool install git+https://github.com/sjev/calced.git
 
 # Or just grab the single-file script and run it directly
 python calced.py <file>
