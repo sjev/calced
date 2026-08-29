@@ -4,7 +4,7 @@ rent 1500                               # => 1_500
 groceries 200 + 150                     # => 350
 utilities 80 + 45 + 30                  # => 155
 entertainment 75                        # => 75
-total                                   # => 2_080
+sum()                                   # => 2_080
 
 # Tax Calculation
 

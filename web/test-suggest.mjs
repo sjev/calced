@@ -43,8 +43,16 @@ const names = (marked, force, values) => ask(marked, force, values).items.map(i 
 check("pi offered", names("2 * pi|").includes("pi"));
 check("one character is too short", names("2 * p|").length === 0, JSON.stringify(names("2 * p|")));
 check("one character still opens on force", names("2 * p|", true).includes("pi"));
-check("today offered", names("tod|").includes("today"));
-check("total offered", names("tot|").includes("total"));
+check("date() offered", names("da|").includes("date()"));
+check("now() offered", names("no|").includes("now()"));
+check("today no longer offered", !names("tod|").includes("today"));
+check("sum() offered", names("su|").includes("sum()"));
+// The caret belongs after the parens, not between them.
+const sumItem = ask("su|").items.find(i => i.name === "sum()");
+check("sum() caret after parens", sumItem && sumItem.cursor[0] === 5, JSON.stringify(sumItem));
+// A variable named "sum" must not dedup the sum() entry away.
+check("sum() survives a sum variable",
+  names("sum = 1\nsu|").includes("sum()"));
 
 // --- directives ---
 {

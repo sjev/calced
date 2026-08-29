@@ -3,7 +3,7 @@ import { Big, BUILTIN_CONSTS } from "./builtins.js";
 import { _isDateObj } from "./dates.js";
 import { tokenize } from "./tokenize.js";
 import {
-  evaluateLine, _detectConversion, _buildMath, _tryParse, _reduceDateSubexprs, _tryDateEval,
+  evaluateLine, ACC_KEY, _detectConversion, _buildMath, _tryParse, _reduceDateSubexprs, _tryDateEval,
 } from "./evaluate.js";
 import { DEFAULT_FMT_OPTS, formatResult } from "./format.js";
 
@@ -68,7 +68,7 @@ function classifyLine(text, variables, rates) {
       const allVars = Object.create(null);
       for (const k in BUILTIN_CONSTS) allVars[k] = BUILTIN_CONSTS[k];
       for (const k in variables) allVars[k] = variables[k];
-      allVars['total'] = 0; allVars['sum'] = 0;
+      allVars[ACC_KEY] = 0;
       const [mathTokens, mathToOrig] = _buildMath(tokens, mathStart, allVars, conv);
       const [result, consumed] = _tryParse(mathTokens);
 
