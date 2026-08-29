@@ -1,4 +1,4 @@
-// DOM wiring: render loop, file menu, docs panel, autocomplete popup, share link, export.
+// DOM wiring: render loop, file menu, docs panel, autocomplete popup, share link, copy.
 import {
   processText, highlightLine, escapeHTML,
   RESULT_RE, splitSections, computeTotalIndicators, alignDecimalPoints,
@@ -12,6 +12,7 @@ const input = document.getElementById("input");
 const results = document.getElementById("results");
 const highlight = document.getElementById("highlight");
 const shareBtn = document.getElementById("share-btn");
+const copyBtn = document.getElementById("copy-btn");
 const docsBtn = document.getElementById("docs-btn");
 const cheatsheet = document.getElementById("cheatsheet");
 const fileBtn = document.getElementById("file-btn");
@@ -387,18 +388,13 @@ function formatForFile(text) {
   return formatted.join("\n");
 }
 
-function downloadFile() {
+function copyText() {
   const text = input.value;
   if (!text.trim()) return;
-  const content = formatForFile(text);
-  const blob = new Blob([content + "\n"], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const heading = text.split("\n").find(l => l.trim().startsWith("#"));
-  a.download = (heading ? heading.replace(/^#+ */, "").trim() : "calced") + ".txt";
-  a.href = url;
-  a.click();
-  URL.revokeObjectURL(url);
+  navigator.clipboard.writeText(formatForFile(text) + "\n").then(() => {
+    copyBtn.classList.add("copied");  // icon button: show the result with color only
+    setTimeout(() => copyBtn.classList.remove("copied"), 1500);
+  });
 }
 
 async function shareURL() {
@@ -411,7 +407,7 @@ async function shareURL() {
 }
 
 shareBtn.addEventListener("click", shareURL);
-document.getElementById("download-btn").addEventListener("click", downloadFile);
+copyBtn.addEventListener("click", copyText);
 
 const WELCOME = `Write math anywhere. Results appear on the right.
 
