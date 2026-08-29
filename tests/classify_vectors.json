@@ -7,158 +7,146 @@
   {"text": "@format = eng", "variables": {}, "expected": "directive"},
   {"text": "@separator = comma", "variables": {}, "expected": "directive"},
   {"text": "@rate USD/EUR = 0.92", "variables": {}, "expected": "directive"},
-  {
-    "text": "rent 1500",
-    "variables": {},
-    "expected": [[0,4,true],[4,5,true],[5,9,false]]
-  },
+  {"text": "rent 1500", "variables": {}, "expected": [[0,4,"dim"],[4,5,"dim"],[5,9,"num"]]},
   {
     "text": "100 + 200",
     "variables": {},
-    "expected": [[0,3,false],[3,4,true],[4,5,false],[5,6,true],[6,9,false]]
+    "expected": [[0,3,"num"],[3,4,"dim"],[4,5,"op"],[5,6,"dim"],[6,9,"num"]]
   },
   {
     "text": "x = 5",
     "variables": {},
-    "expected": [[0,1,false],[1,2,true],[2,3,false],[3,4,true],[4,5,false]]
+    "expected": [[0,1,"text"],[1,2,"dim"],[2,3,"op"],[3,4,"dim"],[4,5,"num"]]
   },
   {
     "text": "x + 1",
     "variables": {"x": 10},
-    "expected": [[0,1,false],[1,2,true],[2,3,false],[3,4,true],[4,5,false]]
+    "expected": [[0,1,"text"],[1,2,"dim"],[2,3,"op"],[3,4,"dim"],[4,5,"num"]]
   },
   {
     "text": "pi + 1",
     "variables": {},
-    "expected": [[0,2,false],[2,3,true],[3,4,false],[4,5,true],[5,6,false]]
+    "expected": [[0,2,"text"],[2,3,"dim"],[3,4,"op"],[4,5,"dim"],[5,6,"num"]]
   },
   {
     "text": "e + tau",
     "variables": {},
-    "expected": [[0,1,false],[1,2,true],[2,3,false],[3,4,true],[4,7,false]]
+    "expected": [[0,1,"text"],[1,2,"dim"],[2,3,"op"],[3,4,"dim"],[4,7,"text"]]
   },
   {
     "text": "100 cm in inches",
     "variables": {},
-    "expected": [[0,3,false],[3,4,true],[4,6,false],[6,7,true],[7,9,false],[9,10,true],[10,16,false]]
+    "expected": [[0,3,"num"],[3,4,"dim"],[4,6,"unit"],[6,7,"dim"],[7,9,"unit"],[9,10,"dim"],[10,16,"unit"]]
   },
   {
     "text": "sqrt(16)",
     "variables": {},
-    "expected": [[0,4,false],[4,5,false],[5,7,false],[7,8,false]]
+    "expected": [[0,4,"func"],[4,5,"op"],[5,7,"num"],[7,8,"op"]]
   },
-  {
-    "text": "sum()",
-    "variables": {},
-    "expected": [[0,5,false]]
-  },
+  {"text": "sum()", "variables": {}, "expected": [[0,5,"func"]]},
   {
     "text": "  rent 1500",
     "variables": {},
-    "expected": [[0,2,true],[2,6,true],[6,7,true],[7,11,false]]
+    "expected": [[0,2,"dim"],[2,6,"dim"],[6,7,"dim"],[7,11,"num"]]
   },
-  {
-    "text": "hello world",
-    "variables": {},
-    "expected": [[0,5,true],[5,6,true],[6,11,true]]
-  },
+  {"text": "hello world", "variables": {}, "expected": [[0,5,"dim"],[5,6,"dim"],[6,11,"dim"]]},
   {
     "text": "price 10 + tax 5",
     "variables": {},
-    "expected": [[0,5,true],[5,6,true],[6,8,false],[8,9,true],[9,10,false],[10,11,true],[11,14,true],[14,15,true],[15,16,false]]
+    "expected": [[0,5,"dim"],[5,6,"dim"],[6,8,"num"],[8,9,"dim"],[9,10,"op"],[10,11,"dim"],[11,14,"dim"],[14,15,"dim"],[15,16,"num"]]
   },
   {
     "text": "test! (here)",
     "variables": {},
-    "expected": [[0,4,true],[4,6,true],[6,7,true],[7,11,true],[11,12,true]]
+    "expected": [[0,4,"dim"],[4,6,"dim"],[6,7,"dim"],[7,11,"dim"],[11,12,"dim"]]
   },
   {
     "text": "University of Michigan",
     "variables": {},
-    "expected": [[0,10,true],[10,11,true],[11,13,true],[13,14,true],[14,22,true]]
+    "expected": [[0,10,"dim"],[10,11,"dim"],[11,13,"dim"],[13,14,"dim"],[14,22,"dim"]]
   },
   {
     "note": "\"of\" dimmed when not preceded by PCT",
     "text": "25 of something",
     "variables": {},
-    "expected": [[0,2,false],[2,3,true],[3,5,true],[5,6,true],[6,15,true]]
+    "expected": [[0,2,"num"],[2,3,"dim"],[3,5,"dim"],[5,6,"dim"],[6,15,"dim"]]
   },
   {
     "note": "backticks (gaps) dimmed around number",
     "text": "`42` here",
     "variables": {},
-    "expected": [[0,1,true],[1,3,false],[3,5,true],[5,9,true]]
+    "expected": [[0,1,"dim"],[1,3,"num"],[3,5,"dim"],[5,9,"dim"]]
   },
   {
     "note": "parens dimmed when they don't contain valid math",
     "text": "(just) 100",
     "variables": {},
-    "expected": [[0,1,true],[1,5,true],[5,6,true],[6,7,true],[7,10,false]]
+    "expected": [[0,1,"dim"],[1,5,"dim"],[5,6,"dim"],[6,7,"dim"],[7,10,"num"]]
   },
   {
     "note": "comma dimmed when not part of function call",
     "text": "thing, 50",
     "variables": {},
-    "expected": [[0,5,true],[5,6,true],[6,7,true],[7,9,false]]
+    "expected": [[0,5,"dim"],[5,6,"dim"],[6,7,"dim"],[7,9,"num"]]
   },
   {
     "note": "trailing comma ignored, number still active",
     "text": "2 foo,",
     "variables": {},
-    "expected": [[0,1,false],[1,2,true],[2,5,true],[5,6,true]]
+    "expected": [[0,1,"num"],[1,2,"dim"],[2,5,"dim"],[5,6,"dim"]]
   },
   {
     "note": "trailing comma dimmed, inner comma in function call still active",
     "text": "max(2, 3),",
     "variables": {},
-    "expected": [[0,3,false],[3,4,false],[4,5,false],[5,6,false],[6,7,true],[7,8,false],[8,9,false],[9,10,true]]
+    "expected": [[0,3,"func"],[3,4,"op"],[4,5,"num"],[5,6,"op"],[6,7,"dim"],[7,8,"num"],[8,9,"op"],[9,10,"dim"]]
   },
   {
     "note": "trailing parenthetical annotation ignored, math still active",
     "text": "2*3 (note)",
     "variables": {},
-    "expected": [[0,1,false],[1,2,false],[2,3,false],[3,4,true],[4,5,true],[5,9,true],[9,10,true]]
+    "expected": [[0,1,"num"],[1,2,"op"],[2,3,"num"],[3,4,"dim"],[4,5,"dim"],[5,9,"dim"],[9,10,"dim"]]
   },
   {
     "note": "as % of highlights all tokens",
     "text": "10 as % of 50",
     "variables": {},
-    "expected": [[0,2,false],[2,3,true],[3,5,false],[5,6,true],[6,7,false],[7,8,true],[8,10,false],[10,11,true],[11,13,false]]
+    "expected": [[0,2,"num"],[2,3,"dim"],[3,5,"text"],[5,6,"dim"],[6,7,"op"],[7,8,"dim"],[8,10,"text"],[10,11,"dim"],[11,13,"num"]]
   },
   {
     "note": "total expression with variable highlights all tokens",
     "text": "sum() + first_half",
     "variables": {"first_half": 300},
-    "expected": [[0,5,false],[5,6,true],[6,7,false],[7,8,true],[8,18,false]]
+    "expected": [[0,5,"func"],[5,6,"dim"],[6,7,"op"],[7,8,"dim"],[8,18,"text"]]
   },
   {
     "note": "variable assignment from total highlights all tokens",
     "text": "gesamt = sum()",
     "variables": {},
-    "expected": [[0,6,false],[6,7,true],[7,8,false],[8,9,true],[9,14,false]]
+    "expected": [[0,6,"text"],[6,7,"dim"],[7,8,"op"],[8,9,"dim"],[9,14,"func"]]
   },
   {
     "note": "total not dimmed when used in assignment",
     "text": "x = sum()",
     "variables": {},
-    "expected": [[0,1,false],[1,2,true],[2,3,false],[3,4,true],[4,9,false]]
+    "expected": [[0,1,"text"],[1,2,"dim"],[2,3,"op"],[3,4,"dim"],[4,9,"func"]]
   },
   {
     "note": "total is an ordinary variable name now that sum() takes parens",
     "text": "total = price * qty",
     "variables": {"price": 100, "qty": 3},
-    "expected": [[0,5,false],[5,6,true],[6,7,false],[7,8,true],[8,13,false],[13,14,true],[14,15,false],[15,16,true],[16,19,false]]
+    "expected": [[0,5,"text"],[5,6,"dim"],[6,7,"op"],[7,8,"dim"],[8,13,"text"],[13,14,"dim"],[14,15,"op"],[15,16,"dim"],[16,19,"text"]]
   },
   {
     "note": "a datetime literal is one span, including the space",
     "text": "2025-01-15 10:30 + 2 hours",
     "variables": {},
-    "expected": [[0,16,false],[16,17,true],[17,18,false],[18,19,true],[19,20,false],[20,21,true],[21,26,false]]
+    "expected": [[0,16,"num"],[16,17,"dim"],[17,18,"op"],[18,19,"dim"],[19,20,"num"],[20,21,"dim"],[21,26,"text"]]
   },
   {
     "note": "a label before a bare datetime keeps the line plain text",
     "text": "meeting 2025-01-15 10:30",
     "variables": {},
-    "expected": [[0,7,true],[7,8,true],[8,24,true]]
+    "expected": [[0,7,"dim"],[7,8,"dim"],[8,24,"dim"]]
   }
 ]

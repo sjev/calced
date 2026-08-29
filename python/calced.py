@@ -497,10 +497,36 @@ CYAN = "\033[36m"
 RESET = "\033[0m"
 
 
+TOKEN_ROLES = {
+    "NUM": "num",
+    "PCT": "num",
+    DATE: "num",
+    "FUNC": "func",
+    "TOTAL": "func",
+    "ADDOP": "op",
+    "MULOP": "op",
+    "POW": "op",
+    "LPAREN": "op",
+    "RPAREN": "op",
+    "COMMA": "op",
+    "EQ": "op",
+}
+
+
+def _span_role(token, is_active, in_conv):
+    """Highlight role of one token. Ignored text is dim whatever its type."""
+    if not is_active:
+        return "dim"
+    if in_conv:
+        return "unit"
+    return TOKEN_ROLES.get(token[0], "text")
+
+
 def classify_line(text, variables, rates=None):
     """Classify tokens in a line for syntax highlighting.
 
-    Returns "blank", "comment", "directive", or list of [start, end, dim] tuples.
+    Returns "blank", "comment", "directive", or list of [start, end, role]
+    tuples. The role is one of "dim", "unit", "num", "func", "op" or "text".
     """
     stripped = text.strip()
     if not stripped:
@@ -527,6 +553,7 @@ def classify_line(text, variables, rates=None):
     )
 
     active = set()
+    conv_span = range(0)
 
     if has_date and has_math:
         # A date expression is active as a whole
@@ -552,7 +579,8 @@ def classify_line(text, variables, rates=None):
             conv = _detect_conversion(tokens, rates=rates)
             conversion, conv_start, conv_end = conv
             if conversion is not None:
-                active.update(range(conv_start, conv_end))
+                conv_span = range(conv_start, conv_end)
+                active.update(conv_span)
 
             all_vars = {**BUILTIN_CONSTS, **variables, ACC_KEY: 0}
             math_tokens, math_to_orig = _build_math(tokens, math_start, all_vars, conv)
@@ -573,11 +601,11 @@ def classify_line(text, variables, rates=None):
             break
         start, end = t[2], t[3]
         if start > pos:
-            spans.append([pos, start, True])
-        spans.append([start, end, idx not in active])
+            spans.append([pos, start, "dim"])
+        spans.append([start, end, _span_role(t, idx in active, idx in conv_span)])
         pos = end
     if pos < len(text):
-        spans.append([pos, len(text), True])
+        spans.append([pos, len(text), "dim"])
     return spans
 
 
@@ -587,9 +615,9 @@ def colorize_expr(text, variables, rates=None):
     if isinstance(cls, str):
         return text
     parts = []
-    for start, end, dim in cls:
+    for start, end, role in cls:
         chunk = text[start:end]
-        if dim:
+        if role == "dim":
             parts.append(DIM + chunk + RESET)
         else:
             parts.append(chunk)
