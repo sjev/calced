@@ -1,7 +1,7 @@
 // Autocomplete suggestions. No DOM.
 import { BUILTIN_FUNC_NAMES, BUILTIN_CONSTS } from "./builtins.js";
 import { UNIT_LOOKUP } from "./units.js";
-import { DATE_KEYWORDS, DURATION_UNITS } from "./dates.js";
+import { DURATION_UNITS } from "./dates.js";
 
 // Autocomplete vocabulary. The engine tables above are the source of truth for
 // functions, constants, units and date words. Only the lists that the engine
@@ -29,8 +29,6 @@ const SUGGEST_KEYWORDS = {
   as: "10 as % of 50",
   "in": "convert: 5 km in miles",
   to: "convert: 5 km to miles",
-  total: "sum of the lines above",
-  sum: "sum of the lines above",
   until: "days until 2026-12-31",
   since: "days since 2026-01-01",
 };
@@ -65,6 +63,19 @@ function _cursorFor(insert) {
 function _item(name, insert, desc, kind) {
   return { name, insert, desc, kind, cursor: _cursorFor(insert) };
 }
+
+// Zero-argument calls take no cursor inside the parens; the caret goes after
+// them. The name keeps the parens so a same-named variable cannot dedup it out.
+function _zeroArgItem(name, desc) {
+  const insert = name + "()";
+  return { name: insert, insert, desc, kind: "function", cursor: [insert.length, insert.length] };
+}
+
+const SUGGEST_ZERO_ARG = {
+  sum: "sum of the lines above",
+  date: "today's date",
+  now: "current date and time",
+};
 
 // Variables assigned on the lines above the caret, newest value wins.
 function _docVars(head, values) {
@@ -176,8 +187,8 @@ function suggest(text, caret, force, values) {
   const cands = _docVars(head, values);
   for (const c of Object.keys(BUILTIN_CONSTS)) cands.push(_item(c, c, SUGGEST_CONST_DESC[c] || "constant", "constant"));
   for (const f of BUILTIN_FUNC_NAMES) cands.push(_item(f, f + "()", SUGGEST_FUNC_DESC[f] || "function", "function"));
+  for (const [k, d] of Object.entries(SUGGEST_ZERO_ARG)) cands.push(_zeroArgItem(k, d));
   for (const [k, d] of Object.entries(SUGGEST_KEYWORDS)) cands.push(_item(k, k, d, "keyword"));
-  for (const k of DATE_KEYWORDS) cands.push(_item(k, k, "date", "keyword"));
   for (const u of DURATION_UNITS) cands.push(_item(u, u, "duration", "keyword"));
   // Units are the largest group, so they need a prefix to narrow them down.
   if (prefix) for (const name of Object.keys(UNIT_LOOKUP)) cands.push(_item(name, name, UNIT_LOOKUP[name][0], "unit"));

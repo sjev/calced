@@ -1,8 +1,16 @@
 // Recursive descent parser and the expression evaluator.
 import { Big, P, _powExceedsLimit, BUILTIN_FUNCS_1, BUILTIN_FUNCS_N, BUILTIN_CONSTS } from "./builtins.js";
 import { UNIT_LOOKUP, convertTemperature } from "./units.js";
-import { DURATION_UNITS, _isDateObj, _todayDate, _dateAddDays, _dateAddMonths, _dateDiffDays } from "./dates.js";
+import {
+  DURATION_UNITS, TIME_UNIT_SECONDS, UNTIL_UNIT_SECONDS,
+  _isDateObj, _isDateTimeObj, _todayDate, _nowValue,
+  _dateAddDays, _dateAddSeconds, _dateAddMonths, _dateDiffDays, _dateDiffSeconds,
+} from "./dates.js";
 import { tokenize } from "./tokenize.js";
+
+// Key that holds the running sum. Not a legal identifier, so it cannot clash
+// with a user variable.
+const ACC_KEY = "__total__";
 
 class Parser {
   constructor(tokens) { this.tokens = tokens; this.pos = 0; }
@@ -186,7 +194,7 @@ function _buildMath(tokens, start, allVars, conv) {
         pairs.push([["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]], idx]);
       }
     } else if (t[0] === "TOTAL") {
-      const v = allVars["total"];
+      const v = allVars[ACC_KEY];
       if (v !== undefined) {
         pairs.push([["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]], idx]);
       }
@@ -375,17 +383,19 @@ function _tryDateEvalInner(tokens, variables) {
     return [result, variables];
   }
 
-  // Pattern 1: "days/weeks until/since DATE" (checked before label stripping)
+  // Pattern 1: "days/weeks/hours until/since DATE" (before label stripping)
   if (body.length === 3
-      && body[0][0] === "WORD" && (body[0][1].toLowerCase() === "days" || body[0][1].toLowerCase() === "weeks")
+      && body[0][0] === "WORD" && body[0][1].toLowerCase() in UNTIL_UNIT_SECONDS
       && body[1][0] === "WORD" && (body[1][1].toLowerCase() === "until" || body[1][1].toLowerCase() === "since")
       && body[2][0] === "DATE") {
-    const today = _todayDate();
+    const unit = body[0][1].toLowerCase();
     const target = body[2][1];
-    const dir = body[1][1].toLowerCase();
-    const diffDays = dir === "until" ? _dateDiffDays(target, today) : _dateDiffDays(today, target);
-    if (body[0][1].toLowerCase() === "weeks") return _finish(new Big(diffDays).div(7));
-    return _finish(new Big(diffDays));
+    // Comparing against a wall clock only makes sense once a time is in play.
+    let secs = unit === "hours" || _isDateTimeObj(target)
+      ? _dateDiffSeconds(target, _nowValue())
+      : _dateDiffDays(target, _todayDate()) * 86400;
+    if (body[1][1].toLowerCase() === "since") secs = -secs;
+    return _finish(P(new Big(secs).div(UNTIL_UNIT_SECONDS[unit])));
   }
 
   // Strip leading label tokens before the first DATE for remaining patterns
@@ -430,7 +440,9 @@ function _tryDateEvalInner(tokens, variables) {
       if (n === null) { ok = false; break; }
       const unit = body[durPos][1].toLowerCase();
       if (op === "-") n = -n;
-      if (unit === "day" || unit === "days") d = _dateAddDays(d, n);
+      // A time-valued unit needs a time to act on, and _dateAddSeconds promotes.
+      if (unit in TIME_UNIT_SECONDS) d = _dateAddSeconds(d, n * TIME_UNIT_SECONDS[unit]);
+      else if (unit === "day" || unit === "days") d = _dateAddDays(d, n);
       else if (unit === "week" || unit === "weeks") d = _dateAddDays(d, n * 7);
       else if (unit === "month" || unit === "months") d = _dateAddMonths(d, n);
       else d = _dateAddMonths(d, n * 12);  // year, years
@@ -439,12 +451,16 @@ function _tryDateEvalInner(tokens, variables) {
     if (ok && _isAnnotation(body.slice(pos))) return _finish(d);
   }
 
-  // Pattern 3: DATE - DATE → number of days
+  // Pattern 3: DATE - DATE → days, or hours once either side carries a time
   if (body.length === 3
       && body[0][0] === "DATE"
       && body[1][0] === "ADDOP" && body[1][1] === "-"
       && body[2][0] === "DATE") {
-    return _finish(new Big(_dateDiffDays(body[0][1], body[2][1])));
+    const [d1, d2] = [body[0][1], body[2][1]];
+    if (!_isDateTimeObj(d1) && !_isDateTimeObj(d2)) {
+      return _finish(new Big(_dateDiffDays(d1, d2)));
+    }
+    return _finish(P(new Big(_dateDiffSeconds(d1, d2)).div(3600)));
   }
 
   return null;
@@ -461,11 +477,10 @@ function evaluateLine(text, variables, rates, resultsAcc) {
   const allVars = Object.create(null);
   for (const k in BUILTIN_CONSTS) allVars[k] = BUILTIN_CONSTS[k];
   for (const k in variables) allVars[k] = variables[k];
-  // Compute subtotal from accumulator and inject as "total"/"sum"
+  // Compute subtotal from accumulator. The key cannot be typed, so a user
+  // variable named "total" or "sum" never collides with it.
   if (resultsAcc) {
-    const subtotal = resultsAcc.reduce((s, r) => r !== null && !_isDateObj(r) ? s.plus(r) : s, new Big(0));
-    allVars["total"] = subtotal;
-    allVars["sum"] = subtotal;
+    allVars[ACC_KEY] = resultsAcc.reduce((s, r) => r !== null && !_isDateObj(r) ? s.plus(r) : s, new Big(0));
   }
   const hasValue = tokens.some(t =>
     t[0] === "NUM" || t[0] === "PCT" || t[0] === "FUNC" || t[0] === "DATE" || t[0] === "TOTAL" || (t[0] === "WORD" && t[1].toLowerCase() in allVars)
@@ -495,6 +510,6 @@ function evaluateLine(text, variables, rates, resultsAcc) {
 }
 
 export {
-  Parser, evaluateLine,
+  Parser, evaluateLine, ACC_KEY,
   _detectConversion, _buildMath, _tryParse, _reduceDateSubexprs, _tryDateEval,
 };

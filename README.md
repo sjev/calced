@@ -14,7 +14,7 @@ Spreadsheets are overkill for quick calculations. REPLs lose context once you cl
 
 Compared to other notepad calculators:
 
-- **Tiny, no dependencies** — the CLI is a single 51KB Python file (stdlib only), the web app is ~75KB of plain ES modules. No build step, no node_modules, no Electron.
+- **Tiny, no dependencies** — the CLI is a single 54KB Python file (stdlib only), the web app is ~83KB of plain ES modules. No build step, no node_modules, no Electron.
 - **Works offline** — both versions run entirely locally. Nothing is sent to a server.
 - **Both CLI and web** — same syntax, same test suite, but well adapted to each environment.
 - **Stable results** — shared web URLs include the major version, so they won't break on updates. Files store results inline. All configuration is inside the documents.
@@ -84,16 +84,16 @@ run_calced("""
 rent 1500
 groceries 200 + 150
 utilities 80 + 45 + 30
-total
+sum()
 """)
 ]]] -->
 ```
 rent 1500                               # => 1_500 │
 groceries 200 + 150                     # =>   350 │
 utilities 80 + 45 + 30                  # =>   155 │
-total                                   # => 2_005 ┘
+sum()                                   # => 2_005 ┘
 ```
-<sub>[Try in web app](https://sjev.github.io/calced/0/#K0rNK1EwNDUw4Eovyk9OLcpMLVYwMjBQ0AYJcpWWZOZkloDELEBCJqZAwtiAqyS_JDGHCwA)</sub>
+<sub>[Try in web app](https://sjev.github.io/calced/0/#K0rNK1EwNDUw4Eovyk9OLcpMLVYwMjBQ0AYJcpWWZOZkloDELEBCJqZAwtiAq7g0V0OTCwA)</sub>
 <!-- [[[end]]] -->
 
 Results are aligned and updated in place each time you run the CLI (or automatically in watch mode), or live as you type in the web app.
@@ -277,67 +277,105 @@ run_calced("""
 <sub>[Try in web app](https://sjev.github.io/calced/0/#MzIwMtU1MNQ1NFXQVjBWSEmsLOYygooZGwLFDBVy8_NKMqCCxkBxBV0FmAoDQy4A)</sub>
 <!-- [[[end]]] -->
 
-Supports `days`, `weeks`, `months`, `years`. Subtracting two dates returns the difference in days. `today`, `tomorrow`, and `yesterday` work as keywords.
+Supports `seconds`, `minutes`, `hours`, `days`, `weeks`, `months`, `years`. `date()` is today and `now()` is the current date and time.
+
+### Times
+
+A date literal can carry a time. A time unit turns a plain date into a datetime.
+
+<!-- [[[cog
+run_calced("""
+2025-01-15 10:00 + 90 minutes
+2025-01-15 23:30 + 1 hour
+2025-01-15 + 3 hours
+""")
+]]] -->
+```
+2025-01-15 10:00 + 90 minutes           # => 2025-01-15 11:30
+2025-01-15 23:30 + 1 hour               # => 2025-01-16 00:30
+2025-01-15 + 3 hours                    # => 2025-01-15 03:00
+```
+<sub>[Try in web app](https://sjev.github.io/calced/0/#MzIwMtU1MNQ1NFUwNLAyMFDQVrA0UMjNzCstSS3mMkLIGhlbGYNkDRUy8kuLkGW0FYzBYsVcAA)</sub>
+<!-- [[[end]]] -->
+
+Subtracting tells you how far apart two points are. **The unit follows the operands:** two plain dates give days, but once either side carries a time you get hours.
+
+<!-- [[[cog
+run_calced("""
+2025-01-16 - 2025-01-15
+2025-01-15 18:00 - 2025-01-15 09:00
+2025-01-15 10:30 - 2025-01-15 10:00
+""")
+]]] -->
+```
+2025-01-16 - 2025-01-15                 # => 1
+2025-01-15 18:00 - 2025-01-15 09:00     # => 9
+2025-01-15 10:30 - 2025-01-15 10:00     # => 0.5
+```
+<sub>[Try in web app](https://sjev.github.io/calced/0/#MzIwMtU1MNQ1NFPQVTCCcUy5EEwFQwsrAwMUWQUDS6AQihoDK2M0NUAhoBoA)</sub>
+<!-- [[[end]]] -->
+
+The result is an ordinary number, so it feeds the rest of the language. A bare time on its own (`10:00`) stays plain text, so notes are left alone.
 
 ### Totals
 
-The `total` (or `sum`) keyword sums all numeric results since the last `#` heading or start of file.
+`sum()` adds every numeric result since the last `#` heading or the start of the file.
 
 <!-- [[[cog
 run_calced("""
 rent 1500
 groceries 350
 utilities 155
-total
+sum()
 """)
 ]]] -->
 ```
 rent 1500                               # => 1_500 │
 groceries 350                           # =>   350 │
 utilities 155                           # =>   155 │
-total                                   # => 2_005 ┘
+sum()                                   # => 2_005 ┘
 ```
-<sub>[Try in web app](https://sjev.github.io/calced/0/#K0rNK1EwNDUw4Eovyk9OLcpMLVYwNjXgKi3JzMksAfEMTU25SvJLEnO4AA)</sub>
+<sub>[Try in web app](https://sjev.github.io/calced/0/#K0rNK1EwNDUw4Eovyk9OLcpMLVYwNjXgKi3JzMksAfEMTU25iktzNTS5AA)</sub>
 <!-- [[[end]]] -->
 
-Blank lines are ignored in the total; headings reset it. Each `total` also resets the running sum, so consecutive totals act as subtotals:
+Blank lines are ignored; headings reset it. Each `sum()` also resets the running total, so consecutive ones act as subtotals:
 
 <!-- [[[cog
 run_calced("""
 food 300
 transport 100
-total
+sum()
 clothing 50
-total
+sum()
 """)
 ]]] -->
 ```
 food 300                                # => 300 │
 transport 100                           # => 100 │
-total                                   # => 400 ┘
+sum()                                   # => 400 ┘
 clothing 50                             # =>  50 │
-total                                   # =>  50 ┘
+sum()                                   # =>  50 ┘
 ```
-<sub>[Try in web app](https://sjev.github.io/calced/0/#S8vPT1EwNjDgKilKzCsuyC8qUTAE8fJLEnO4knPySzIy89IVTGEiAA)</sub>
+<sub>[Try in web app](https://sjev.github.io/calced/0/#S8vPT1EwNjDgKilKzCsuyC8qUTAE8opLczU0uZJz8ksyMvPSFUxhIgA)</sub>
 <!-- [[[end]]] -->
 
-`total` resolves to a value, so it works inside expressions and assignments:
+`sum()` resolves to a value, so it works inside expressions and assignments. `total` is an ordinary variable name:
 
 <!-- [[[cog
 run_calced("""
 100
 200
 300
-total * 2
+total = sum() * 2
 """)
 ]]] -->
 ```
 100                                     # =>   100 │
 200                                     # =>   200 │
 300                                     # =>   300 │
-total * 2                               # => 1_200 ┘
+total = sum() * 2                       # => 1_200 ┘
 ```
-<sub>[Try in web app](https://sjev.github.io/calced/0/#MzQw4DICYmMgLskvScxR0FIw4gIA)</sub>
+<sub>[Try in web app](https://sjev.github.io/calced/0/#MzQw4DICYmMgLskvScxRsFUoLs3V0FTQUjDiAgA)</sub>
 <!-- [[[end]]] -->
 
 ### Number formats

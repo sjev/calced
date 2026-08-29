@@ -10,6 +10,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { processText, classifyLine } from "./document.js";
 import { evaluateLine } from "./evaluate.js";
+import { formatResult } from "./format.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const testsDir = join(__dirname, "..", "tests");
@@ -34,8 +35,10 @@ const evaluateVectors = JSON.parse(readFileSync(join(testsDir, "evaluate_vectors
 for (let i = 0; i < evaluateVectors.length; i++) {
   const v = evaluateVectors[i];
   const [result] = evaluateLine(v.text, v.variables);
+  // Date results go through the formatter, which is where the date/datetime
+  // distinction lives.
   const resultVal = result !== null
-    ? (result._isDate ? `${result.y}-${String(result.m).padStart(2,"0")}-${String(result.d).padStart(2,"0")}` : result.toNumber())
+    ? (result._isDate ? formatResult(result) : result.toNumber())
     : result;
   if (resultVal !== v.expected) {
     console.error(`FAIL evaluate vector ${i}: ${JSON.stringify(v.text)}`);

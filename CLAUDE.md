@@ -66,7 +66,9 @@ Imports go one way only: `vendor` -> `builtins` -> `units`/`dates` -> `tokenize`
 
 `app.js` is the only file that touches the DOM. `index.html` has no inline `onclick`; a module script cannot see those, so handlers use `addEventListener` and `data-example`.
 
-Key concepts: variable assignments (`x = 5`), format/separator directives (`@format = fixed(2)`), SI prefixes, unit conversions, date arithmetic, percentages, totals.
+Key concepts: variable assignments (`x = 5`), format/separator directives (`@format = fixed(2)`), SI prefixes, unit conversions, date and datetime arithmetic, percentages, totals.
+
+Zero-argument calls (`date()`, `now()`, `sum()`) resolve in the tokenizer, not the parser — neither parser supports zero-arg calls. This keeps the bare words usable as variable names.
 
 ## Test Structure
 

@@ -32,30 +32,114 @@ DEFAULT_FMT_OPTS = {"mode": "minSig", "precision": 10, "separator": "underscore"
 
 # --- Date/time support ---
 DATE = "DATE"
-ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-DATE_KEYWORDS = {"today", "tomorrow", "yesterday"}
-DURATION_UNITS = {"day", "days", "week", "weeks", "month", "months", "year", "years"}
+ISO_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?")
+DURATION_UNITS = {
+    "second",
+    "seconds",
+    "minute",
+    "minutes",
+    "hour",
+    "hours",
+    "day",
+    "days",
+    "week",
+    "weeks",
+    "month",
+    "months",
+    "year",
+    "years",
+}
+# Time-valued units promote a plain date to a datetime.
+TIME_UNIT_SECONDS = {
+    "second": 1,
+    "seconds": 1,
+    "minute": 60,
+    "minutes": 60,
+    "hour": 3600,
+    "hours": 3600,
+}
+# Units that "days until X" can be counted in.
+UNTIL_UNIT_SECONDS = {"hours": 3600, "days": 86400, "weeks": 604800}
+
+# Key that holds the running sum. Not a legal identifier, so it cannot clash
+# with a user variable.
+ACC_KEY = "__total__"
+
+EMPTY_CALL_RE = re.compile(r"[ \t]*\([ \t]*\)")
 
 
-def _resolve_date_keyword(keyword):
-    """Return a datetime.date for a date keyword."""
-    today = datetime.date.today()
-    if keyword == "today":
-        return today
-    if keyword == "tomorrow":
-        return today + datetime.timedelta(days=1)
-    if keyword == "yesterday":
-        return today - datetime.timedelta(days=1)
-    raise ValueError(f"Unknown date keyword: {keyword}")
+def _today():
+    """Current local date. The clock seam, so tests can patch it."""
+    return datetime.date.today()
+
+
+def _now():
+    """Current local time, whole seconds. Microseconds would churn on every render."""
+    return datetime.datetime.now().replace(microsecond=0)
+
+
+def _empty_call_end(text, pos):
+    """End index of an empty argument list at `pos`, or None."""
+    m = EMPTY_CALL_RE.match(text, pos)
+    return m.end() if m else None
+
+
+# Calls that take no arguments. They resolve in the tokenizer, so the bare word
+# stays a usable variable name and the parser needs no zero-arg support.
+# The lambdas look the clock up at call time, which keeps it patchable.
+ZERO_ARG_CALLS = {
+    "date": (DATE, lambda: _today()),
+    "now": (DATE, lambda: _now()),
+    "sum": ("TOTAL", lambda: "sum"),
+}
+
+
+def _parse_iso(text, pos):
+    """Parse an ISO date with an optional time. Returns (value, end) or None.
+
+    A time only counts when it follows a date, so a bare "18:00" in a note is
+    never read as a value. An out-of-range time degrades to the date alone.
+    """
+    m = ISO_DATE_RE.match(text, pos)
+    if m is None:
+        return None
+    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    try:
+        day = datetime.date(y, mo, d)
+    except ValueError:
+        return None
+    if m.group(4) is None:
+        return day, m.end(3)
+    hh, mi, ss = int(m.group(4)), int(m.group(5)), int(m.group(6) or 0)
+    if hh > 23 or mi > 59 or ss > 59:
+        return day, m.end(3)
+    return datetime.datetime(y, mo, d, hh, mi, ss), m.end()
+
+
+def _format_date(d):
+    """Render a date or datetime. `isoformat` is unusable: it puts a T between them."""
+    if not isinstance(d, datetime.datetime):
+        return d.isoformat()
+    # Seconds show only when they carry information, because a datetime cannot
+    # remember whether the literal that made it had them.
+    fmt = "%Y-%m-%d %H:%M:%S" if d.second else "%Y-%m-%d %H:%M"
+    return d.strftime(fmt)
+
+
+def _to_datetime(d):
+    """Promote a date to midnight. A datetime passes through unchanged."""
+    if isinstance(d, datetime.datetime):
+        return d
+    return datetime.datetime(d.year, d.month, d.day)
 
 
 def _add_months(d, months):
-    """Add months to a date, clamping day to valid range."""
+    """Add months to a date, clamping day to valid range. `replace` keeps any time."""
     month = d.month - 1 + months
     year = d.year + month // 12
     month = month % 12 + 1
     max_day = calendar.monthrange(year, month)[1]
-    return datetime.date(year, month, min(d.day, max_day))
+    return d.replace(year=year, month=month, day=min(d.day, max_day))
 
 
 # SI prefixes (case-sensitive: M=mega, m=milli)
@@ -324,17 +408,15 @@ def tokenize(text):
 
         start = i
 
-        # ISO date: 2025-01-15 (must check before number parsing)
+        # ISO date, optionally with a time (must check before number parsing)
         if text[i].isdigit():
-            dm = ISO_DATE_RE.match(text, i)
-            if dm:
-                try:
-                    d = datetime.date.fromisoformat(dm.group())
-                    tokens.append((DATE, d, start, dm.end()))
-                    i = dm.end()
-                    continue
-                except ValueError:
-                    pass  # fall through to number parsing
+            parsed = _parse_iso(text, i)
+            if parsed is not None:
+                value, end = parsed
+                tokens.append((DATE, value, start, end))
+                i = end
+                continue
+            # Not a real date, so fall through to number parsing.
 
         # Hex/binary/octal: 0xFF, 0b1010, 0o77
         if text[i] == "0" and i + 1 < n and text[i + 1] in "xXbBoO":
@@ -382,14 +464,18 @@ def tokenize(text):
             word = m.group()
             wl = word.lower()
             end = i + m.end()
-            if wl in DATE_KEYWORDS:
-                tokens.append((DATE, _resolve_date_keyword(wl), start, end))
-            elif wl == "of":
+            # Zero-argument calls resolve here, so the bare word stays a usable
+            # variable name.
+            call_end = _empty_call_end(text, end)
+            if call_end is not None and wl in ZERO_ARG_CALLS:
+                typ, make = ZERO_ARG_CALLS[wl]
+                tokens.append((typ, make(), start, call_end))
+                i = call_end
+                continue
+            if wl == "of":
                 tokens.append(("OF", "of", start, end))
             elif wl == "as":
                 tokens.append(("AS", "as", start, end))
-            elif wl in ("total", "sum"):
-                tokens.append(("TOTAL", wl, start, end))
             elif wl in BUILTIN_FUNC_NAMES:
                 tokens.append(("FUNC", wl, start, end))
             else:
@@ -468,7 +554,7 @@ def classify_line(text, variables, rates=None):
             if conversion is not None:
                 active.update(range(conv_start, conv_end))
 
-            all_vars = {**BUILTIN_CONSTS, **variables, "total": 0, "sum": 0}
+            all_vars = {**BUILTIN_CONSTS, **variables, ACC_KEY: 0}
             math_tokens, math_to_orig = _build_math(tokens, math_start, all_vars, conv)
             result, consumed = _try_parse(math_tokens)
 
@@ -765,8 +851,8 @@ def _build_math(tokens, start, all_vars, conv):
             if wl in all_vars and not isinstance(all_vars[wl], datetime.date):
                 pairs.append((("NUM", all_vars[wl], t[2], t[3]), idx))
         elif t[0] == "TOTAL":
-            if "total" in all_vars:
-                pairs.append((("NUM", all_vars["total"], t[2], t[3]), idx))
+            if ACC_KEY in all_vars:
+                pairs.append((("NUM", all_vars[ACC_KEY], t[2], t[3]), idx))
         elif t[0] in ("EQ", DATE) or (t[0] == "COMMA" and paren_depth == 0):
             pass
         else:
@@ -975,18 +1061,22 @@ def _try_date_eval_inner(tokens, variables):
     if (
         len(body) == 3
         and body[0][0] == "WORD"
-        and body[0][1].lower() in ("days", "weeks")
+        and body[0][1].lower() in UNTIL_UNIT_SECONDS
         and body[1][0] == "WORD"
         and body[1][1].lower() in ("until", "since")
         and body[2][0] == DATE
     ):
-        today = datetime.date.today()
-        direction = body[1][1].lower()
+        unit = body[0][1].lower()
         target = body[2][1]
-        diff_days = (target - today).days if direction == "until" else (today - target).days
-        if body[0][1].lower() == "weeks":
-            return _finish(Decimal(diff_days) / Decimal(7))
-        return _finish(Decimal(diff_days))
+        # Comparing against a wall clock only makes sense once a time is in play.
+        if unit == "hours" or isinstance(target, datetime.datetime):
+            delta = _to_datetime(target) - _now()
+            secs = Decimal(delta.days * 86400 + delta.seconds)
+        else:
+            secs = Decimal((target - _today()).days) * 86400
+        if body[1][1].lower() == "since":
+            secs = -secs
+        return _finish(secs / UNTIL_UNIT_SECONDS[unit])
 
     # Strip leading label tokens before the first DATE for remaining patterns
     labels_stripped = False
@@ -1029,7 +1119,10 @@ def _try_date_eval_inner(tokens, variables):
                 break
             unit = body[dur_pos][1].lower()
             n = -n if op == "-" else n
-            if unit in ("day", "days"):
+            if unit in TIME_UNIT_SECONDS:
+                # A time-valued unit needs a time to act on, so promote first.
+                d = _to_datetime(d) + datetime.timedelta(seconds=n * TIME_UNIT_SECONDS[unit])
+            elif unit in ("day", "days"):
                 d = d + datetime.timedelta(days=n)
             elif unit in ("week", "weeks"):
                 d = d + datetime.timedelta(weeks=n)
@@ -1041,7 +1134,7 @@ def _try_date_eval_inner(tokens, variables):
         if ok and _is_annotation(body[pos:]):
             return _finish(d)
 
-    # Pattern 3: DATE - DATE → number of days
+    # Pattern 3: DATE - DATE → days, or hours once either side carries a time
     if (
         len(body) == 3
         and body[0][0] == DATE
@@ -1051,7 +1144,13 @@ def _try_date_eval_inner(tokens, variables):
     ):
         d1 = body[0][1]
         d2 = body[2][1]
-        return _finish(Decimal((d1 - d2).days))
+        if not isinstance(d1, datetime.datetime) and not isinstance(d2, datetime.datetime):
+            return _finish(Decimal((d1 - d2).days))
+        # Mixed operands would raise TypeError, so promote both. Build the
+        # Decimal from whole seconds; total_seconds() is a float and would
+        # break parity with the JS engine.
+        delta = _to_datetime(d1) - _to_datetime(d2)
+        return _finish(Decimal(delta.days * 86400 + delta.seconds) / 3600)
 
     return None
 
@@ -1074,11 +1173,11 @@ def evaluate_line(text, variables, rates=None, results_acc=None):
 
     all_vars = {**BUILTIN_CONSTS, **variables}
 
-    # Compute subtotal from accumulator and inject as "total"/"sum"
+    # Compute subtotal from accumulator. The key cannot be typed, so a user
+    # variable named "total" or "sum" never collides with it.
     if results_acc is not None:
         subtotal = sum(r for r in results_acc if r is not None and not isinstance(r, datetime.date))
-        all_vars["total"] = subtotal
-        all_vars["sum"] = subtotal
+        all_vars[ACC_KEY] = subtotal
 
     has_value = any(
         t[0] in ("NUM", "PCT", "FUNC", DATE, "TOTAL")
@@ -1134,7 +1233,7 @@ def format_result(n, fmt_opts=None):
     JS engine agree. Rounding is half-even in every mode.
     """
     if isinstance(n, datetime.date):
-        return n.isoformat()
+        return _format_date(n)
     if fmt_opts is None:
         fmt_opts = DEFAULT_FMT_OPTS
     d = n if isinstance(n, Decimal) else Decimal(str(n))
@@ -1428,7 +1527,7 @@ def process_json(content):
         if line.result is None:
             value = None
         elif isinstance(line.result, datetime.date):
-            value = line.result.isoformat()
+            value = _format_date(line.result)
         else:
             value = float(line.result)
         output.append({"input": line.clean, "result": value})

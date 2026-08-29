@@ -6,12 +6,14 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(here, "..", "python"))
 from decimal import Decimal
 
-from calced import evaluate_line, process_json
+import calced
+from calced import evaluate_line, format_result, process_json
 
 with open(os.path.join(here, "evaluate_vectors.json")) as f:
     vectors = json.load(f)
@@ -24,14 +26,35 @@ class TestEvaluate(unittest.TestCase):
                 result, *_ = evaluate_line(v["text"], v["variables"])
                 expected = v["expected"]
                 if isinstance(expected, str):
-                    # Date result: compare ISO string
-                    self.assertEqual(result.isoformat(), expected)
+                    # Date result: compare through the formatter, which is where
+                    # the date/datetime distinction lives.
+                    self.assertEqual(format_result(result), expected)
                 else:
                     self.assertEqual(result, expected)
 
-    def test_today(self):
-        result, *_ = evaluate_line("today + 0 days", {})
+    def test_date_func(self):
+        """date() is the current date. Non-deterministic, so it cannot be a fixture."""
+        result, *_ = evaluate_line("date() + 0 days", {})
         self.assertEqual(result, datetime.date.today())
+
+    def test_now_func(self):
+        """now() carries a time, and is truncated to whole seconds."""
+        with mock.patch.object(calced, "_now", lambda: datetime.datetime(2025, 1, 15, 10, 30, 45)):
+            result, *_ = evaluate_line("now()", {})
+            self.assertEqual(format_result(result), "2025-01-15 10:30:45")
+            result, *_ = evaluate_line("now() + 3 hours", {})
+            self.assertEqual(format_result(result), "2025-01-15 13:30:45")
+
+    def test_now_has_no_microseconds(self):
+        """Microseconds would churn the result on every render."""
+        self.assertEqual(calced._now().microsecond, 0)
+
+    def test_bare_keywords_are_variables_again(self):
+        """today/date/now/total/sum without parens are ordinary identifiers."""
+        for name in ("today", "date", "now", "total", "sum"):
+            with self.subTest(name=name):
+                _, v, *_ = evaluate_line(f"{name} = 7", {})
+                self.assertEqual(v.get(name), 7)
 
     def test_date_variable(self):
         _, v, *_ = evaluate_line("d = 2025-01-15 + 2 weeks", {})
@@ -40,7 +63,7 @@ class TestEvaluate(unittest.TestCase):
 
     def test_dates_skip_total(self):
         """Dates in accumulator should not break total."""
-        content = "2025-01-15 + 3 days\n100\n200\ntotal"
+        content = "2025-01-15 + 3 days\n100\n200\nsum()"
         output = process_json(content)
         # total should be 300 (skipping the date)
         self.assertEqual(output[-1]["result"], 300.0)
@@ -126,7 +149,7 @@ class TestEvaluate(unittest.TestCase):
 
     def test_total_with_mixed_expressions(self):
         """Total sums labeled lines, percentages, and skips dates."""
-        content = "# Budget\n2025-01-01 + 3 days\n100\n200\n50% of 400\ntotal"
+        content = "# Budget\n2025-01-01 + 3 days\n100\n200\n50% of 400\nsum()"
         output = process_json(content)
         self.assertEqual(output[-1]["result"], 500.0)
 

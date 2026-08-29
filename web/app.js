@@ -17,12 +17,13 @@ let lastVarValues = {};  // lower-case variable name -> rendered value, for auto
 // --- Docs Panel ---
 const EXAMPLES = {
   basics: "2 + 3\n10 * (4 + 6)\n2 ^ 10\n17 % 5",
-  variables: "price = 100\nqty = 3\nprice * qty\n\ntax_rate = 22%\ntotal = price * qty\ntax = total * tax_rate\nafter_tax = total - tax",
+  variables: "price = 100\nqty = 3\ntotal = price * qty\n\ntax_rate = 22%\ntax = total * tax_rate\nafter_tax = total - tax",
+  totals: "# Groceries\n\nbread 3.50\nmilk 2 * 1.20\neggs 4.95\nsum()\n\n# A heading starts a new total\n\n100\n200\nsubtotal = sum()\nsubtotal * 2",
   pct: "50% of 300\n200 + 15%\n200 - 10%",
   units: "5 km in miles\n100 C in F\n1 gib in mib\n60 min in hr\n1 gal in l",
   funcs: "sqrt(16)\nround(3.14159, 2)\nmin(5, 2, 8)\nmax(1, 9, 3)\nlog10(1000)",
   fmt: "1000000\n\n@format = fixed(2)\n1000000\n\n@format = scientific\n1000000\n\n@format = eng\n1000000\n\n@separator = comma\n@format = minSig(3)\n1000000",
-  dates: "today + 2 weeks\nyesterday\ntomorrow\n\n# Deadline\ndeadline = 2026-12-31\ndays until deadline\n\n# Date math\n2025-01-31 + 1 month\n2025-03-01 - 2025-01-01",
+  dates: "date()\nnow()\ndate() + 2 weeks\n\n# Deadline\ndeadline = 2026-12-31\ndays until deadline\n\n# Date math\n2025-01-31 + 1 month\n2025-03-01 - 2025-01-01\n\n# Times\nnow() + 3 hours\n2025-01-15 18:00 - 2025-01-15 09:00",
   rates: "@rate USD/EUR = 0.92\n100 USD in EUR\n50 EUR in USD\n\n@rate BTC/USD = 97500\n0.5 BTC in USD",
 };
 
@@ -367,7 +368,7 @@ const WELCOME = `Write math anywhere. Results appear on the right.
 rent 1500
 groceries 200 + 150
 utilities 80 + 45
-total
+sum()
 
 # Variables and percentages
 
