@@ -55,7 +55,7 @@ header h1 a { color: inherit; text-decoration: none; }
 }
 .header-link:hover, #share-btn:hover { background: var(--accent); color: var(--header-bg); }
 #share-btn.copied, #copy-btn.copied { background: var(--result); color: var(--header-bg); }
-#copy-btn { display: flex; align-items: center; }
+#copy-btn, #gh-link { display: flex; align-items: center; }
 .editor-wrap {
   flex: 1; overflow-y: auto;
 }
