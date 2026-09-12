@@ -21,7 +21,7 @@ let unitFailures = 0;
 const classifyVectors = JSON.parse(readFileSync(join(testsDir, "classify_vectors.json"), "utf8"));
 for (let i = 0; i < classifyVectors.length; i++) {
   const v = classifyVectors[i];
-  const result = classifyLine(v.text, v.variables);
+  const result = classifyLine(v.text, v.variables, null, v.in_prose || false);
   if (JSON.stringify(result) !== JSON.stringify(v.expected)) {
     console.error(`FAIL classify vector ${i}: ${JSON.stringify(v.text)}`);
     if (v.note) console.error(`  note: ${v.note}`);

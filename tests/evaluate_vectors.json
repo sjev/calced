@@ -1,85 +1,533 @@
 [
-  {"text": "2 + 3", "variables": {}, "expected": 5.0},
-  {"text": "x + 1", "variables": {"x": 10}, "expected": 11.0},
-  {"text": "2 foo", "variables": {}, "expected": 2.0},
-  {"text": "2 foo,", "variables": {}, "expected": 2.0},
-  {"text": "max(2, 3)", "variables": {}, "expected": 3.0},
-  {"text": "max(2, 3),", "variables": {}, "expected": 3.0},
-  {"text": "2*3 (see http://example.com)", "variables": {}, "expected": 6.0},
-  {"text": "foo = 2*3 (see http://example.com)", "variables": {}, "expected": 6.0},
-  {"text": "rent 2000 (monthly)", "variables": {}, "expected": 2000.0},
-  {"text": "# comment", "variables": {}, "expected": null},
-  {"text": "hello world", "variables": {}, "expected": null},
-
-  {"text": "2025-01-15 + 3 days", "variables": {}, "expected": "2025-01-18"},
-  {"text": "2025-03-01 - 2025-01-01", "variables": {}, "expected": 59.0},
-  {"text": "2025-01-31 + 1 month", "variables": {}, "expected": "2025-02-28"},
-  {"text": "2025-02-28 + 1 year", "variables": {}, "expected": "2026-02-28"},
-  {"text": "2025-01-15 - 7 days", "variables": {}, "expected": "2025-01-08"},
-  {"text": "2025-01-01 + 2 weeks", "variables": {}, "expected": "2025-01-15"},
-  {"text": "2025-06-15 + 3 months", "variables": {}, "expected": "2025-09-15"},
-  {"text": "2025-12-31 + 1 day", "variables": {}, "expected": "2026-01-01"},
-  {"text": "2025-01-01 - 2024-01-01", "variables": {}, "expected": 366.0},
-
-  {"text": "(2025-03-01 - 2025-01-01) * 24", "variables": {}, "expected": 1416.0},
-  {"text": "(2025-03-01 - 2025-01-01) days in hr", "variables": {}, "expected": 1416.0},
-  {"text": "(2025-01-15 + 3 days)", "variables": {}, "expected": "2025-01-18"},
-
-  {"note": "nested functions", "text": "sqrt(abs(-16))", "variables": {}, "expected": 4.0},
-  {"note": "multi-arg with nested functions", "text": "max(sqrt(4), sqrt(9))", "variables": {}, "expected": 3.0},
-  {"note": "expression inside function", "text": "sqrt(3^2 + 4^2)", "variables": {}, "expected": 5.0},
-  {"note": "text labels around operators", "text": "price 10 + tax 5", "variables": {}, "expected": 15.0},
-  {"note": "percentage in parens then multiply", "text": "(200 + 10%) * 2", "variables": {}, "expected": 440.0},
-  {"note": "percentage then addition", "text": "200 + 10% + 50", "variables": {}, "expected": 270.0},
-  {"note": "percentage of parenthesized expression", "text": "50% of (200 + 300)", "variables": {}, "expected": 250.0},
-  {"note": "percentage as multiplier", "text": "200 * 10%", "variables": {}, "expected": 20.0},
-  {"note": "SI prefix in expression", "text": "1k + 500", "variables": {}, "expected": 1500.0},
-  {"note": "SI prefix inside function", "text": "sqrt(1M)", "variables": {}, "expected": 1000.0},
-  {"note": "date arithmetic with expression in parens", "text": "2025-01-01 + (2 * 7) days", "variables": {}, "expected": "2025-01-15"},
-  {"note": "negative date difference", "text": "2025-01-01 - 2025-03-01", "variables": {}, "expected": -59.0},
-  {"note": "leap year date + 1 year clamps", "text": "2024-02-29 + 1 year", "variables": {}, "expected": "2025-02-28"},
-  {"note": "leap year date + 4 years preserves", "text": "2024-02-29 + 4 years", "variables": {}, "expected": "2028-02-29"},
-
-  {"note": "parenthesized label before number", "text": "(just) 100", "variables": {}, "expected": 100.0},
-  {"note": "parenthesized label with expression", "text": "(note) 100 + 50", "variables": {}, "expected": 150.0},
-  {"note": "trailing parenthesized label on labeled value", "text": "rent (monthly) 1500", "variables": {}, "expected": 1500.0},
-
-  {"note": "compound date: week + days", "text": "2025-01-01 + 1 week + 3 days", "variables": {}, "expected": "2025-01-11"},
-  {"note": "compound date: month + days", "text": "2025-01-01 + 1 month + 15 days", "variables": {}, "expected": "2025-02-16"},
-  {"note": "compound date: subtract week and days", "text": "2025-01-15 - 1 week - 3 days", "variables": {}, "expected": "2025-01-05"},
-
-  {"note": "paren label + percentage", "text": "(tax) 200 + 10%", "variables": {}, "expected": 220.0},
-  {"note": "paren label + conversion", "text": "(weight) 1 kg in g", "variables": {}, "expected": 1000.0},
-  {"note": "paren label + function", "text": "(area) sqrt(144)", "variables": {}, "expected": 12.0},
-  {"note": "paren label + SI prefix", "text": "(note) 1k + 500", "variables": {}, "expected": 1500.0},
-  {"note": "two paren labels around operator", "text": "(first) 10 + (second) 20", "variables": {}, "expected": 30.0},
-  {"note": "nested paren label", "text": "((deep)) 100", "variables": {}, "expected": 100.0},
-  {"note": "consecutive paren labels", "text": "(foo) (bar) 100", "variables": {}, "expected": 100.0},
-  {"note": "text labels around subtraction", "text": "salary 5000 - tax 1000 - insurance 500", "variables": {}, "expected": 3500.0},
-
-  {"note": "label before date arithmetic", "text": "note 2025-06-15 + 3 days", "variables": {}, "expected": "2025-06-18"},
-  {"note": "paren label before date arithmetic", "text": "(deadline) 2025-06-15 + 3 days", "variables": {}, "expected": "2025-06-18"},
-  {"note": "paren label before bare date → plain text", "text": "(info) 2025-06-15", "variables": {}, "expected": null},
-  {"note": "paren label before compound date", "text": "(plan) 2025-01-01 + 1 week + 3 days", "variables": {}, "expected": "2025-01-11"},
-  {"note": "label before date difference", "text": "gap 2025-03-01 - 2025-01-01", "variables": {}, "expected": 59.0},
-
-  {"note": "compound date: 4 segments", "text": "2025-01-01 + 1 day + 1 week + 1 month + 1 year", "variables": {}, "expected": "2026-02-09"},
-  {"note": "compound date: same unit twice", "text": "2025-01-01 + 1 week + 1 week", "variables": {}, "expected": "2025-01-15"},
-  {"note": "compound date: expression in second segment", "text": "2025-01-01 + 1 week + 2 * 3 days", "variables": {}, "expected": "2025-01-14"},
-
-  {"note": "as % of basic", "text": "10 as % of 50", "variables": {}, "expected": 20.0},
-  {"note": "as % of with expressions", "text": "25 as % of (50 + 50)", "variables": {}, "expected": 25.0},
-  {"note": "as % of with variable", "text": "x as % of 200", "variables": {"x": 50}, "expected": 25.0},
-  {"note": "as % of greater than 100", "text": "150 as % of 100", "variables": {}, "expected": 150.0},
-
-  {"note": "trailing text with hyphenated word", "text": "Other non-CELO (converted, approx) 437", "variables": {}, "expected": 437.0},
-  {"note": "word label before bare date → plain text", "text": "rates from 2026-03-26", "variables": {}, "expected": null},
-  {"note": "bare date without label still works", "text": "2025-06-15", "variables": {}, "expected": "2025-06-15"},
-  {"note": "URL with trailing number → plain text", "text": "Fees from https://dune.com/queries/6914777", "variables": {}, "expected": null},
-  {"text": "2 ^ 50", "variables": {}, "expected": 1125899906842624.0},
-  {"text": "0 ^ 0", "variables": {}, "expected": 1.0},
-  {"text": "2 ^ 100000", "variables": {}, "expected": null, "note": "guarded: exact result exceeds MAX_RESULT_DIGITS"},
-  {"text": "9 ^ 9 ^ 9", "variables": {}, "expected": null, "note": "guarded"},
-  {"text": "2 ^ 1000000", "variables": {}, "expected": null, "note": "guarded"},
-  {"text": "1.23456789 ^ 1000", "variables": {}, "expected": null, "note": "guarded: 9 digits x 1000 exceeds MAX_RESULT_DIGITS"}
+  {
+    "text": "2 + 3",
+    "variables": {},
+    "expected": 5.0
+  },
+  {
+    "text": "x + 1",
+    "variables": {
+      "x": 10
+    },
+    "expected": 11.0
+  },
+  {
+    "note": "unknown word makes the line prose",
+    "text": "2 foo",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "unknown word and comma",
+    "text": "2 foo,",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "text": "max(2, 3)",
+    "variables": {},
+    "expected": 3.0
+  },
+  {
+    "note": "trailing comma is not consumed",
+    "text": "max(2, 3),",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "trailing annotation is prose",
+    "text": "2*3 (see http://example.com)",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "assignment with a trailing annotation is prose",
+    "text": "foo = 2*3 (see http://example.com)",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "label plus trailing annotation is prose",
+    "text": "rent 2000 (monthly)",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "text": "# comment",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "text": "hello world",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "text": "2025-01-15 + 3 days",
+    "variables": {},
+    "expected": "2025-01-18"
+  },
+  {
+    "text": "2025-03-01 - 2025-01-01",
+    "variables": {},
+    "expected": 59.0
+  },
+  {
+    "text": "2025-01-31 + 1 month",
+    "variables": {},
+    "expected": "2025-02-28"
+  },
+  {
+    "text": "2025-02-28 + 1 year",
+    "variables": {},
+    "expected": "2026-02-28"
+  },
+  {
+    "text": "2025-01-15 - 7 days",
+    "variables": {},
+    "expected": "2025-01-08"
+  },
+  {
+    "text": "2025-01-01 + 2 weeks",
+    "variables": {},
+    "expected": "2025-01-15"
+  },
+  {
+    "text": "2025-06-15 + 3 months",
+    "variables": {},
+    "expected": "2025-09-15"
+  },
+  {
+    "text": "2025-12-31 + 1 day",
+    "variables": {},
+    "expected": "2026-01-01"
+  },
+  {
+    "text": "2025-01-01 - 2024-01-01",
+    "variables": {},
+    "expected": 366.0
+  },
+  {
+    "text": "(2025-03-01 - 2025-01-01) * 24",
+    "variables": {},
+    "expected": 1416.0
+  },
+  {
+    "text": "(2025-03-01 - 2025-01-01) days in hr",
+    "variables": {},
+    "expected": 1416.0
+  },
+  {
+    "text": "(2025-01-15 + 3 days)",
+    "variables": {},
+    "expected": "2025-01-18"
+  },
+  {
+    "note": "nested functions",
+    "text": "sqrt(abs(-16))",
+    "variables": {},
+    "expected": 4.0
+  },
+  {
+    "note": "multi-arg with nested functions",
+    "text": "max(sqrt(4), sqrt(9))",
+    "variables": {},
+    "expected": 3.0
+  },
+  {
+    "note": "expression inside function",
+    "text": "sqrt(3^2 + 4^2)",
+    "variables": {},
+    "expected": 5.0
+  },
+  {
+    "note": "labels around operators are prose",
+    "text": "price 10 + tax 5",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "percentage in parens then multiply",
+    "text": "(200 + 10%) * 2",
+    "variables": {},
+    "expected": 440.0
+  },
+  {
+    "note": "percentage then addition",
+    "text": "200 + 10% + 50",
+    "variables": {},
+    "expected": 270.0
+  },
+  {
+    "note": "percentage of parenthesized expression",
+    "text": "50% of (200 + 300)",
+    "variables": {},
+    "expected": 250.0
+  },
+  {
+    "note": "percentage as multiplier",
+    "text": "200 * 10%",
+    "variables": {},
+    "expected": 20.0
+  },
+  {
+    "note": "SI prefix in expression",
+    "text": "1k + 500",
+    "variables": {},
+    "expected": 1500.0
+  },
+  {
+    "note": "SI prefix inside function",
+    "text": "sqrt(1M)",
+    "variables": {},
+    "expected": 1000.0
+  },
+  {
+    "note": "date arithmetic with expression in parens",
+    "text": "2025-01-01 + (2 * 7) days",
+    "variables": {},
+    "expected": "2025-01-15"
+  },
+  {
+    "note": "negative date difference",
+    "text": "2025-01-01 - 2025-03-01",
+    "variables": {},
+    "expected": -59.0
+  },
+  {
+    "note": "leap year date + 1 year clamps",
+    "text": "2024-02-29 + 1 year",
+    "variables": {},
+    "expected": "2025-02-28"
+  },
+  {
+    "note": "leap year date + 4 years preserves",
+    "text": "2024-02-29 + 4 years",
+    "variables": {},
+    "expected": "2028-02-29"
+  },
+  {
+    "note": "parenthesized label before number",
+    "text": "(just) 100",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "parenthesized label with expression",
+    "text": "(note) 100 + 50",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "label around a value",
+    "text": "rent (monthly) 1500",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "compound date: week + days",
+    "text": "2025-01-01 + 1 week + 3 days",
+    "variables": {},
+    "expected": "2025-01-11"
+  },
+  {
+    "note": "compound date: month + days",
+    "text": "2025-01-01 + 1 month + 15 days",
+    "variables": {},
+    "expected": "2025-02-16"
+  },
+  {
+    "note": "compound date: subtract week and days",
+    "text": "2025-01-15 - 1 week - 3 days",
+    "variables": {},
+    "expected": "2025-01-05"
+  },
+  {
+    "note": "paren label + percentage",
+    "text": "(tax) 200 + 10%",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "paren label + conversion",
+    "text": "(weight) 1 kg in g",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "paren label + function",
+    "text": "(area) sqrt(144)",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "paren label + SI prefix",
+    "text": "(note) 1k + 500",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "two paren labels around operator",
+    "text": "(first) 10 + (second) 20",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "nested paren label",
+    "text": "((deep)) 100",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "consecutive paren labels",
+    "text": "(foo) (bar) 100",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "labels around subtraction are prose",
+    "text": "salary 5000 - tax 1000 - insurance 500",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "label before date arithmetic",
+    "text": "note 2025-06-15 + 3 days",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "paren label before date arithmetic",
+    "text": "(deadline) 2025-06-15 + 3 days",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "paren label before bare date \u2192 plain text",
+    "text": "(info) 2025-06-15",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "paren label before compound date",
+    "text": "(plan) 2025-01-01 + 1 week + 3 days",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "label before date difference",
+    "text": "gap 2025-03-01 - 2025-01-01",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "compound date: 4 segments",
+    "text": "2025-01-01 + 1 day + 1 week + 1 month + 1 year",
+    "variables": {},
+    "expected": "2026-02-09"
+  },
+  {
+    "note": "compound date: same unit twice",
+    "text": "2025-01-01 + 1 week + 1 week",
+    "variables": {},
+    "expected": "2025-01-15"
+  },
+  {
+    "note": "compound date: expression in second segment",
+    "text": "2025-01-01 + 1 week + 2 * 3 days",
+    "variables": {},
+    "expected": "2025-01-14"
+  },
+  {
+    "note": "as % of basic",
+    "text": "10 as % of 50",
+    "variables": {},
+    "expected": 20.0
+  },
+  {
+    "note": "as % of with expressions",
+    "text": "25 as % of (50 + 50)",
+    "variables": {},
+    "expected": 25.0
+  },
+  {
+    "note": "as % of with variable",
+    "text": "x as % of 200",
+    "variables": {
+      "x": 50
+    },
+    "expected": 25.0
+  },
+  {
+    "note": "as % of greater than 100",
+    "text": "150 as % of 100",
+    "variables": {},
+    "expected": 150.0
+  },
+  {
+    "note": "trailing text with hyphenated word",
+    "text": "Other non-CELO (converted, approx) 437",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "word label before bare date \u2192 plain text",
+    "text": "rates from 2026-03-26",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "bare date without label still works",
+    "text": "2025-06-15",
+    "variables": {},
+    "expected": "2025-06-15"
+  },
+  {
+    "note": "URL with trailing number \u2192 plain text",
+    "text": "Fees from https://dune.com/queries/6914777",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "text": "2 ^ 50",
+    "variables": {},
+    "expected": 1125899906842624.0
+  },
+  {
+    "text": "0 ^ 0",
+    "variables": {},
+    "expected": 1.0
+  },
+  {
+    "text": "2 ^ 100000",
+    "variables": {},
+    "expected": null,
+    "note": "guarded: exact result exceeds MAX_RESULT_DIGITS"
+  },
+  {
+    "text": "9 ^ 9 ^ 9",
+    "variables": {},
+    "expected": null,
+    "note": "guarded"
+  },
+  {
+    "text": "2 ^ 1000000",
+    "variables": {},
+    "expected": null,
+    "note": "guarded"
+  },
+  {
+    "text": "1.23456789 ^ 1000",
+    "variables": {},
+    "expected": null,
+    "note": "guarded: 9 digits x 1000 exceeds MAX_RESULT_DIGITS"
+  },
+  {
+    "note": "comment after a value",
+    "text": "3.50  # bread",
+    "variables": {},
+    "expected": 3.5
+  },
+  {
+    "note": "comment after an assignment",
+    "text": "x = 2 + 3  # note",
+    "variables": {},
+    "expected": 5.0
+  },
+  {
+    "note": "comment only",
+    "text": "# just a note",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "stale result marker is a comment",
+    "text": "2 + 3  # => 99",
+    "variables": {},
+    "expected": 5.0
+  },
+  {
+    "note": "python power operator",
+    "text": "2 ** 10",
+    "variables": {},
+    "expected": 1024.0
+  },
+  {
+    "note": "caret stays an alias",
+    "text": "2 ^ 10",
+    "variables": {},
+    "expected": 1024.0
+  },
+  {
+    "note": "floor division",
+    "text": "7 // 2",
+    "variables": {},
+    "expected": 3.0
+  },
+  {
+    "note": "floor division rounds toward minus infinity",
+    "text": "-7 // 2",
+    "variables": {},
+    "expected": -4.0
+  },
+  {
+    "note": "floor division by zero",
+    "text": "7 // 0",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "comma is not a decimal point",
+    "text": "19,5",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "comma is not a thousands separator",
+    "text": "10,000",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "underscore groups digits",
+    "text": "10_000",
+    "variables": {},
+    "expected": 10000.0
+  },
+  {
+    "note": "unknown character fails the line",
+    "text": "2 + 3:",
+    "variables": {},
+    "expected": null
+  },
+  {
+    "note": "dutch prose with known variables",
+    "text": "Knop 1 is gebruik_mnd: het verschil met contract_mnd",
+    "variables": {
+      "gebruik_mnd": 60,
+      "contract_mnd": 60
+    },
+    "expected": null
+  },
+  {
+    "note": "prose that ends in a number",
+    "text": "bedrag, dus (a + b) / 2. Samengesteld",
+    "variables": {
+      "a": 30000,
+      "b": 10000
+    },
+    "expected": null
+  },
+  {
+    "note": "date with a comment",
+    "text": "2025-06-15 + 3 days  # deadline",
+    "variables": {},
+    "expected": "2025-06-18"
+  },
+  {
+    "note": "conversion with a comment",
+    "text": "1 kg in g  # gewicht",
+    "variables": {},
+    "expected": 1000.0
+  }
 ]

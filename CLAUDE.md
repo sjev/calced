@@ -60,13 +60,24 @@ Both implementations follow the same pipeline: **tokenize → classify line → 
 | `format.js` | number to display string |
 | `document.js` | line classification, `processText`, highlight, alignment |
 | `suggest.js` | autocomplete suggestions, no DOM |
-| `app.js` | all DOM wiring, URL compression for sharing |
+| `store.js` | named documents in localStorage, no DOM |
+| `share.js` | document to `?data=` link and back |
+| `app.js` | all DOM wiring |
 
-Imports go one way only: `vendor` -> `builtins` -> `units`/`dates` -> `tokenize` -> `evaluate` -> `format` -> `document` -> `app`. Do not add a cycle.
+Imports go one way only: `vendor` -> `builtins` -> `units`/`dates` -> `tokenize` -> `evaluate` -> `format` -> `document` -> `app`. `store.js` and `share.js` are leaves that only `app.js` imports. Do not add a cycle.
 
 `app.js` is the only file that touches the DOM. `index.html` has no inline `onclick`; a module script cannot see those, so handlers use `addEventListener` and `data-example`.
 
 Key concepts: variable assignments (`x = 5`), format/separator directives (`@format = fixed(2)`), SI prefixes, unit conversions, date and datetime arithmetic, percentages, totals.
+
+**A line computes only when every token is consumed.** No word is dropped and no
+operator is repaired, so one unknown word or stray character makes the line prose. `#`
+starts a comment to the end of the line. A line whose stripped text is exactly `"""`
+toggles a prose block, which holds markdown and is never read.
+
+A **block** is a run of consecutive lines that are neither blank nor prose. It bounds
+`sum()`, the decimal alignment and the `│ ┘` indicators alike (`_split_sections` /
+`splitSections`). A `#` line is a comment, not a section heading.
 
 Zero-argument calls (`date()`, `now()`, `sum()`) resolve in the tokenizer, not the parser — neither parser supports zero-arg calls. This keeps the bare words usable as variable names.
 
@@ -75,7 +86,7 @@ Zero-argument calls (`date()`, `now()`, `sum()`) resolve in the tokenizer, not t
 - **`tests/*.md`** — Integration tests. Each line with `# =>` has an expected result. The Python CLI processes these in-place; `git diff --exit-code` verifies nothing changed.
 - **`tests/evaluate_vectors.json`** / **`tests/classify_vectors.json`** — Shared unit test vectors used by both Python and JS test runners.
 - **`tests/test_*.py`** — Python unit tests (unittest framework). `test_cli.py` tests CLI flags via subprocess.
-- **`web/test.mjs`** — JS test runner. It imports the engine modules directly and runs against the same vectors and `.md` files. `web/test-suggest.mjs` covers autocomplete.
+- **`web/test.mjs`** — JS test runner. It imports the engine modules directly and runs against the same vectors and `.md` files. `web/test-suggest.mjs` covers autocomplete, `web/test-store.mjs` the document store.
 
 New tests should use `.md` fixture files or add vectors to the JSON files — these are run against both implementations. Only use Python unittest classes for Python-specific CLI behavior.
 

@@ -16,91 +16,58 @@ const TOKEN_ROLES = {
   FUNC: "func", TOTAL: "func",
   ADDOP: "op", MULOP: "op", POW: "op",
   LPAREN: "op", RPAREN: "op", COMMA: "op", EQ: "op",
+  COMMENT: "comment",
 };
 
-// Highlight role of one token. Ignored text is dim whatever its type.
-function _spanRole(token, isActive, inConv) {
-  if (!isActive) return "dim";
-  if (inConv) return "unit";
+const PROSE_FENCE = '"""';
+
+// Highlight role of one token. Only a line that computes is highlighted.
+function _spanRole(token, inConv) {
+  if (inConv && token[0] !== "COMMENT") return "unit";
   return TOKEN_ROLES[token[0]] || "text";
 }
 
-// Returns "blank", "comment", "directive", or a list of [start, end, role]
-// spans. The role is one of "dim", "unit", "num", "func", "op" or "text".
-function classifyLine(text, variables, rates) {
+// Returns "blank", "prose", "comment", "directive", or a list of
+// [start, end, role] spans. The role is one of "dim", "unit", "num", "func",
+// "op", "comment" or "text". A line that does not compute is "prose", so colour
+// marks exactly the lines calced reads.
+function classifyLine(text, variables, rates, inProse) {
   const stripped = text.trim();
+  if (inProse || stripped === PROSE_FENCE) return "prose";
   if (!stripped) return "blank";
   if (stripped.startsWith("#")) return "comment";
-  if (DIRECTIVE_RE.test(stripped)) return "directive";
-  if (RATE_RE.test(stripped)) return "directive";
+  if (DIRECTIVE_RE.test(stripped) || RATE_RE.test(stripped)) return "directive";
 
   variables = variables || Object.create(null);
   let tokens = tokenize(text);
-  const allNames = new Set();
-  for (const k in BUILTIN_CONSTS) allNames.add(k);
-  for (const k in variables) allNames.add(k);
+  let convStart = 0, convEnd = 0;
+  let computed = false;
 
   const hasDate = tokens.some(t =>
     t[0] === "DATE" || (t[0] === "WORD" && _isDateObj(variables[t[1].toLowerCase()]))
   );
+  if (hasDate) {
+    if (_tryDateEval(tokens, variables) !== null) computed = true;
+    else tokens = _reduceDateSubexprs(tokens, variables);
+  }
 
-  const hasMath = tokens.some(t =>
-    t[0] === "NUM" || t[0] === "PCT" || t[0] === "FUNC" || t[0] === "TOTAL" || t[0] === "DATE"
-    || (t[0] === "WORD" && allNames.has(t[1].toLowerCase()))
-  );
-
-  const active = new Set();
-  let convStart = 0, convEnd = 0;
-
-  if (hasDate && hasMath) {
-    // A date expression is active as a whole
-    if (_tryDateEval(tokens, variables) !== null) {
-      for (let i = 0; i < tokens.length; i++) {
-        if (tokens[i][0] !== "EOF") active.add(i);
-      }
-    } else {
-      tokens = _reduceDateSubexprs(tokens, variables);
+  if (!computed) {
+    let mathStart = 0;
+    if (tokens.length >= 3 && tokens[0][0] === "WORD" && tokens[1][0] === "EQ") mathStart = 2;
+    const conv = _detectConversion(tokens, rates);
+    const allVars = Object.create(null);
+    for (const k in BUILTIN_CONSTS) allVars[k] = BUILTIN_CONSTS[k];
+    for (const k in variables) allVars[k] = variables[k];
+    allVars[ACC_KEY] = 0;
+    const [mathTokens] = _buildMath(tokens, mathStart, allVars, conv);
+    const [result] = _tryParse(mathTokens);
+    if (result !== null) {
+      computed = true;
+      if (conv[0] !== null) { convStart = conv[1]; convEnd = conv[2]; }
     }
   }
-  if (hasMath && active.size === 0) {
-    if (tokens.some(t => t[0] === "TOTAL")
-        && !tokens.some(t => t[0] === "NUM" || t[0] === "PCT" || t[0] === "FUNC" || t[0] === "WORD" || t[0] === "LPAREN")) {
-      for (let i = 0; i < tokens.length; i++) {
-        if (tokens[i][0] === "TOTAL") active.add(i);
-      }
-    } else {
-      let mathStart = 0;
-      if (tokens.length >= 3 && tokens[0][0] === "WORD" && tokens[1][0] === "EQ") {
-        active.add(0);
-        active.add(1);
-        mathStart = 2;
-      }
 
-      const conv = _detectConversion(tokens, rates);
-      const [conversion] = conv;
-      if (conversion !== null) {
-        [, convStart, convEnd] = conv;
-        for (let ci = convStart; ci < convEnd; ci++) active.add(ci);
-      }
-
-      const allVars = Object.create(null);
-      for (const k in BUILTIN_CONSTS) allVars[k] = BUILTIN_CONSTS[k];
-      for (const k in variables) allVars[k] = variables[k];
-      allVars[ACC_KEY] = 0;
-      const [mathTokens, mathToOrig] = _buildMath(tokens, mathStart, allVars, conv);
-      const [result, consumed] = _tryParse(mathTokens);
-
-      if (result !== null) {
-        for (let i = 0; i < consumed; i++) active.add(mathToOrig[i]);
-      } else {
-        for (let i = 0; i < mathToOrig.length; i++) {
-          if (mathTokens[i][0] === "NUM" || mathTokens[i][0] === "PCT") {
-            active.add(mathToOrig[i]);
-          }
-        }
-      }
-    }
-  }
+  if (!computed) return "prose";
 
   const spans = [];
   let pos = 0;
@@ -109,7 +76,7 @@ function classifyLine(text, variables, rates) {
     if (t[0] === "EOF") break;
     const start = t[2], end = t[3];
     if (start > pos) spans.push([pos, start, "dim"]);
-    spans.push([start, end, _spanRole(t, active.has(i), i >= convStart && i < convEnd)]);
+    spans.push([start, end, _spanRole(t, i >= convStart && i < convEnd)]);
     pos = end;
   }
   if (pos < text.length) spans.push([pos, text.length, "dim"]);
@@ -122,6 +89,11 @@ function escapeHTML(s) {
 
 function highlightLine(text, cls) {
   if (cls === "blank") return "";
+  // Prose is markdown, so a heading inside it still reads as a heading.
+  if (cls === "prose") {
+    const tag = text.trim().startsWith("#") ? "hl-heading" : "hl-prose";
+    return '<span class="' + tag + '">' + escapeHTML(text) + '</span>';
+  }
   if (cls === "comment") return '<span class="hl-comment">' + escapeHTML(text) + '</span>';
   if (cls === "directive") return '<span class="hl-dim">' + escapeHTML(text) + '</span>';
   let html = "";
@@ -135,25 +107,23 @@ function highlightLine(text, cls) {
 const RESULT_RE = /\s{2,}# => .*$/;
 const ALIGNABLE_RE = /^-?[\d_, ]+(\.\d+)?$/;
 
-function splitSections(output, lines) {
+// A block is a run of consecutive lines that are neither blank nor prose. It
+// bounds the total, the decimal alignment and the total indicators alike.
+function splitSections(output) {
   const sections = [];
   let cur = [];
   for (let i = 0; i < output.length; i++) {
-    if (output[i].result === null && lines[i].trim().startsWith("#")) {
-      if (cur.length) sections.push(cur);
-      cur = [i];
-    } else {
-      cur.push(i);
-    }
+    cur.push(i);
+    if (output[i].endsBlock) { sections.push(cur); cur = []; }
   }
   if (cur.length) sections.push(cur);
   return sections;
 }
 
-function computeTotalIndicators(output, lines) {
+function computeTotalIndicators(output) {
   // Returns array: null, "summed", or "total" per line
   const indicators = new Array(output.length).fill(null);
-  const sections = splitSections(output, lines);
+  const sections = splitSections(output);
   for (const sec of sections) {
     for (const i of sec) {
       if (output[i].isTotal) {
@@ -172,9 +142,9 @@ function computeTotalIndicators(output, lines) {
 // Pad numbers so that decimal points line up within each section.
 //   mode "frac": right-pad the fraction (web, used with text-align:right)
 //   mode "int":  left-pad the integer part (file export)
-function alignDecimalPoints(output, lines, mode) {
+function alignDecimalPoints(output, mode) {
   const aligned = output.map(o => o.result);
-  for (const sec of splitSections(output, lines)) {
+  for (const sec of splitSections(output)) {
     const info = [];
     for (const i of sec) {
       const r = aligned[i];
@@ -228,21 +198,35 @@ function processText(text) {
   let resultsAcc = [];
   const fmtOpts = { ...DEFAULT_FMT_OPTS };
   const output = [];
+  let inProse = false;
   for (const line of lines) {
     const stripped = line.trim();
-    const cls = classifyLine(line, variables, rates);
 
+    // A prose block holds markdown. Nothing inside it is read.
+    if (stripped === PROSE_FENCE) {
+      inProse = !inProse;
+      resultsAcc = [];
+      output.push({ result: null, cls: "prose", endsBlock: true });
+      continue;
+    }
+    if (inProse) {
+      output.push({ result: null, cls: classifyLine(line, variables, rates, true), endsBlock: true });
+      continue;
+    }
+
+    // A blank line ends the block, so it bounds the total above it.
+    if (!stripped) {
+      resultsAcc = [];
+      output.push({ result: null, cls: "blank", endsBlock: true });
+      continue;
+    }
+
+    const cls = classifyLine(line, variables, rates, false);
     if (applyDirective(stripped, fmtOpts, rates)) {
       output.push({ result: null, cls });
       continue;
     }
     if (stripped.startsWith("#")) {
-      resultsAcc = [];
-      output.push({ result: null, cls });
-      continue;
-    }
-    if (!stripped) {
-      resultsAcc.push(null);
       output.push({ result: null, cls });
       continue;
     }
@@ -257,7 +241,7 @@ function processText(text) {
     output.push({ result: formatResult(result, fmtOpts), cls, isTotal });
     if (isTotal) resultsAcc = [];
   }
-  const aligned = alignDecimalPoints(output, lines, "int");
+  const aligned = alignDecimalPoints(output, "int");
   for (let i = 0; i < output.length; i++) output[i].result = aligned[i];
   return output;
 }

@@ -12,6 +12,14 @@ import { tokenize } from "./tokenize.js";
 // with a user variable.
 const ACC_KEY = "__total__";
 
+// Floor division. big.js has no floor rounding mode, so round toward zero and
+// step down when the quotient was negative and not already whole.
+function _floorDiv(a, b) {
+  const q = a.div(b);
+  const t = q.round(0, 0);
+  return q.lt(0) && !q.eq(t) ? t.minus(1) : t;
+}
+
 class Parser {
   constructor(tokens) { this.tokens = tokens; this.pos = 0; }
   peek() { return this.pos < this.tokens.length ? this.tokens[this.pos] : ["EOF", null]; }
@@ -51,6 +59,7 @@ class Parser {
       const right = this.parsePower();
       if (op === "*") left = P(left.times(right));
       else if (op === "/") { if (right.eq(0)) throw new Error("division by zero"); left = P(left.div(right)); }
+      else if (op === "//") { if (right.eq(0)) throw new Error("division by zero"); left = _floorDiv(left, right); }
       else if (op === "%") { if (right.eq(0)) throw new Error("division by zero"); left = P(left.mod(right)); }
     }
     return left;
@@ -170,9 +179,12 @@ function _detectConversion(tokens, rates) {
 function _buildMath(tokens, start, allVars, conv) {
   // conv is the triple returned by _detectConversion. Returns
   // [mathTokens, mathToOrig], where mathToOrig[i] is the original token index
-  // that mathTokens[i] came from.
+  // that mathTokens[i] came from, or [null, null] when the line is not code.
+  //
+  // Every token must be accounted for. An unknown word, a stray character or a
+  // comma outside a call means the line is prose.
   const [conversion, convStart, convEnd] = conv;
-  let pairs = [];  // [token, original index]
+  const pairs = [];  // [token, original index]
   let parenDepth = 0;
   for (let idx = start; idx < tokens.length; idx++) {
     const t = tokens[idx];
@@ -188,109 +200,41 @@ function _buildMath(tokens, start, allVars, conv) {
       }
       continue;
     }
+    if (t[0] === "COMMENT") continue;
     if (t[0] === "WORD") {
       const v = allVars[t[1].toLowerCase()];
-      if (v !== undefined && !_isDateObj(v)) {
-        pairs.push([["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]], idx]);
-      }
+      if (v === undefined || _isDateObj(v)) return [null, null];
+      pairs.push([["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]], idx]);
     } else if (t[0] === "TOTAL") {
       const v = allVars[ACC_KEY];
-      if (v !== undefined) {
-        pairs.push([["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]], idx]);
-      }
-    } else if (t[0] === "EQ" || t[0] === "DATE" || (t[0] === "COMMA" && parenDepth === 0)) {
-      // not part of the math
+      if (v === undefined) return [null, null];
+      pairs.push([["NUM", v instanceof Big ? v : new Big(v), t[2], t[3]], idx]);
+    } else if (t[0] === "EQ" || t[0] === "DATE" || t[0] === "UNKNOWN"
+               || (t[0] === "COMMA" && parenDepth === 0)) {
+      return [null, null];
     } else {
       if (t[0] === "LPAREN") parenDepth++;
       else if (t[0] === "RPAREN") parenDepth--;
       pairs.push([t, idx]);
     }
   }
-
-  pairs = _stripEmptyParens(pairs);
-  pairs = _stripOrphanOps(pairs, start);
   return [pairs.map(p => p[0]), pairs.map(p => p[1])];
 }
 
-// Drop parens left empty (or holding only commas) after WORDs were skipped.
-function _stripEmptyParens(pairs) {
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const out = [];
-    let i = 0;
-    while (i < pairs.length) {
-      if (pairs[i][0][0] === "LPAREN") {
-        let j = i + 1;
-        while (j < pairs.length && pairs[j][0][0] === "COMMA") j++;
-        if (j < pairs.length && pairs[j][0][0] === "RPAREN") {
-          i = j + 1;
-          changed = true;
-          continue;
-        }
-      }
-      out.push(pairs[i]);
-      i++;
-    }
-    pairs = out;
-  }
-  return pairs;
-}
-
-// Drop operators left dangling after WORDs were skipped. A leading or doubled
-// operator goes away, except a unary minus. A MULOP stays so that the parse
-// fails, instead of silently exposing the numbers after it.
-function _stripOrphanOps(pairs, start) {
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const out = [];
-    for (let i = 0; i < pairs.length; i++) {
-      const [t, orig] = pairs[i];
-      if (t[0] === "ADDOP" || t[0] === "MULOP") {
-        const prev = out.length ? out[out.length - 1][0][0] : null;
-        const nxt = i + 1 < pairs.length ? pairs[i + 1][0][0] : "EOF";
-        if (prev === null || prev === "ADDOP" || prev === "MULOP") {
-          const unaryMinus = t[0] === "ADDOP" && t[1] === "-"
-            && (nxt === "NUM" || nxt === "LPAREN" || nxt === "FUNC")
-            // a leading minus must be the first token of the expression
-            && (prev !== null || orig === start);
-          if (t[0] !== "MULOP" && !unaryMinus) { changed = true; continue; }
-        } else if (nxt === "EOF" || nxt === "RPAREN") {
-          changed = true;
-          continue;
-        }
-      }
-      out.push([t, orig]);
-    }
-    pairs = out;
-  }
-  return pairs;
-}
-
-// True when the tokens are only balanced parenthetical notes, e.g. "(net 30)".
-function _isAnnotation(tokens) {
-  let depth = 0;
-  for (const t of tokens) {
-    if (t[0] === "EOF") break;
-    if (depth === 0 && t[0] !== "LPAREN") return false;
-    if (t[0] === "LPAREN") depth++;
-    else if (t[0] === "RPAREN") depth--;
-  }
-  return depth === 0;
-}
-
-// Parse math tokens, allowing trailing balanced parenthetical annotations.
+// Parse math tokens. The parser must consume all of them.
 // Returns [result, consumed] on success, or [null, -1] on failure.
 function _tryParse(mathTokens) {
+  if (mathTokens === null) return [null, -1];
+  let parser, result;
   try {
-    const parser = new Parser(mathTokens);
-    const result = parser.parseExpr();
-    if (_isAnnotation(mathTokens.slice(parser.pos))) return [result, parser.pos];
-    return [null, -1];
+    parser = new Parser(mathTokens);
+    result = parser.parseExpr();
   } catch (e) {
     return [null, -1];
   }
+  const rest = mathTokens.slice(parser.pos);
+  if (rest.length && rest[0][0] !== "EOF") return [null, -1];
+  return [result, parser.pos];
 }
 
 function _reduceDateSubexprs(tokens, variables) {
@@ -364,7 +308,7 @@ function _tryDateEvalInner(tokens, variables) {
     varName = toks[0][1].toLowerCase();
     toks = toks.slice(2);
   }
-  let body = toks.filter(t => t[0] !== "EOF");
+  let body = toks.filter(t => t[0] !== "EOF" && t[0] !== "COMMENT");
   if (!body.length) return null;
 
   // Strip outer parentheses
@@ -398,21 +342,8 @@ function _tryDateEvalInner(tokens, variables) {
     return _finish(P(new Big(secs).div(UNTIL_UNIT_SECONDS[unit])));
   }
 
-  // Strip leading label tokens before the first DATE for remaining patterns
-  const LABEL_TYPES = new Set(["WORD", "LPAREN", "RPAREN", "COMMA"]);
-  let firstDateIdx = -1;
-  let labelsStripped = false;
-  for (let i = 0; i < body.length; i++) {
-    if (body[i][0] === "DATE") { firstDateIdx = i; break; }
-  }
-  if (firstDateIdx > 0 && body.slice(0, firstDateIdx).every(t => LABEL_TYPES.has(t[0]))) {
-    body = body.slice(firstDateIdx);
-    labelsStripped = true;
-  }
-
   // Pattern 0: bare DATE
   if (body.length === 1 && body[0][0] === "DATE") {
-    if (labelsStripped) return null;
     return _finish(body[0][1]);
   }
 
@@ -448,7 +379,7 @@ function _tryDateEvalInner(tokens, variables) {
       else d = _dateAddMonths(d, n * 12);  // year, years
       pos = durPos + 1;
     }
-    if (ok && _isAnnotation(body.slice(pos))) return _finish(d);
+    if (ok && pos === body.length) return _finish(d);
   }
 
   // Pattern 3: DATE - DATE → days, or hours once either side carries a time

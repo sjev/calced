@@ -158,8 +158,8 @@ function render() {
   if (cleaned !== text) input.value = cleaned;
   const lines = cleaned.split("\n");
   const output = processText(cleaned);
-  const aligned = alignDecimalPoints(output, lines, "frac");
-  const indicators = computeTotalIndicators(output, lines);
+  const aligned = alignDecimalPoints(output, "frac");
+  const indicators = computeTotalIndicators(output);
   lastVarValues = {};
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*[@#]/.test(lines[i]) || !output[i] || output[i].result === null) continue;
@@ -182,7 +182,7 @@ function render() {
     resLines[i].style.height = hlLines[i].getBoundingClientRect().height + 'px';
   }
   scheduleSave();
-  const heading = lines.find(l => l.trim().startsWith("#"));
+  const heading = lines.find((l, i) => output[i] && output[i].cls === "prose" && l.trim().startsWith("#"));
   document.title = heading ? heading.replace(/^#+ */, "").trim() + " - calced" : "calced";
 }
 
@@ -352,11 +352,11 @@ function scheduleSave() {
 function formatForFile(text) {
   const lines = text.split("\n");
   const output = processText(text);
-  const aligned = alignDecimalPoints(output, lines, "int");
-  const indicators = computeTotalIndicators(output, lines);
+  const aligned = alignDecimalPoints(output, "int");
+  const indicators = computeTotalIndicators(output);
 
   // Per-section column alignment (match Python CLI behavior)
-  const sections = splitSections(output, lines);
+  const sections = splitSections(output);
 
   const formatted = new Array(lines.length);
   for (const sec of sections) {

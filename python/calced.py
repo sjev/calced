@@ -18,7 +18,7 @@ import re
 import sys
 import time
 import zlib
-from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
+from decimal import ROUND_FLOOR, ROUND_HALF_EVEN, Decimal, InvalidOperation
 
 SITE_URL = "https://sjev.github.io/calced"
 REPO_URL = "https://github.com/sjev/calced"
@@ -28,6 +28,7 @@ DIRECTIVE_RE = re.compile(r"^@(format|separator)\s*=\s*(.+)$", re.IGNORECASE)
 FORMAT_RE = re.compile(r"^(minSig|fixed|scientific|eng|auto)(?:\((\d+)\))?$", re.IGNORECASE)
 RATE_RE = re.compile(r"^@rate\s+(\w+)/(\w+)\s*=\s*(.+)$", re.IGNORECASE)
 ALIGNABLE_RE = re.compile(r"^-?[\d_, ]+(\.\d+)?$")
+PROSE_FENCE = '"""'
 DEFAULT_FMT_OPTS = {"mode": "minSig", "precision": 10, "separator": "underscore"}
 
 # --- Date/time support ---
@@ -170,6 +171,9 @@ SI_SUFFIX_RE = "[" + re.escape("".join(SI_PREFIX.keys())) + "]"
 ENG_SUFFIX = {round(math.log10(float(v))): k for k, v in SI_PREFIX.items() if k not in ("K", "μ")}
 
 MAX_RESULT_DIGITS = 1000
+
+# Python spellings. "^" stays an alias for "**".
+TWO_CHAR_TOKENS = {"**": "POW", "//": "MULOP"}
 
 # "%" is modulo here; a "%" that follows a number is tokenized as PCT instead.
 SINGLE_CHAR_TOKENS = {
@@ -428,13 +432,13 @@ def tokenize(text):
                 i = end
                 continue
 
-        # Numbers: 1,000 or 1_000 or 1.5 or .5 or 1.5e3 with optional SI suffix
+        # Numbers: 1_000 or 1.5 or .5 or 1.5e3 with optional SI suffix
         m = re.match(
-            r"(\d(?:\d|_|,(?=\d))*\.?\d*|\.\d+)(?:([eE][+-]?\d+)|(" + SI_SUFFIX_RE + r"))?",
+            r"(\d(?:\d|_)*\.?\d*|\.\d+)(?:([eE][+-]?\d+)|(" + SI_SUFFIX_RE + r"))?",
             text[i:],
         )
         if m and m.group(1):
-            raw = m.group(1).replace(",", "").replace("_", "")
+            raw = m.group(1).replace("_", "")
             exp = m.group(2)
             if exp:
                 val = Decimal(raw + exp)
@@ -450,6 +454,18 @@ def tokenize(text):
             else:
                 tokens.append(("NUM", val, start, end))
                 i = end
+            continue
+
+        # A comment runs to the end of the line.
+        if text[i] == "#":
+            tokens.append(("COMMENT", text[i:], start, n))
+            i = n
+            continue
+
+        typ = TWO_CHAR_TOKENS.get(text[i : i + 2])
+        if typ:
+            tokens.append((typ, text[i : i + 2], start, i + 2))
+            i += 2
             continue
 
         typ = SINGLE_CHAR_TOKENS.get(text[i])
@@ -483,7 +499,9 @@ def tokenize(text):
             i = end
             continue
 
-        i += 1  # skip unknown chars
+        # Anything else is unknown. It reaches the parser and fails the line.
+        tokens.append(("UNKNOWN", text[i], start, i + 1))
+        i += 1
 
     tokens.append(("EOF", None, n, n))
     return tokens
@@ -510,89 +528,65 @@ TOKEN_ROLES = {
     "RPAREN": "op",
     "COMMA": "op",
     "EQ": "op",
+    "COMMENT": "comment",
 }
 
 
-def _span_role(token, is_active, in_conv):
-    """Highlight role of one token. Ignored text is dim whatever its type."""
-    if not is_active:
-        return "dim"
-    if in_conv:
+def _span_role(token, in_conv):
+    """Highlight role of one token. Only a line that computes is highlighted."""
+    if in_conv and token[0] != "COMMENT":
         return "unit"
     return TOKEN_ROLES.get(token[0], "text")
 
 
-def classify_line(text, variables, rates=None):
+def classify_line(text, variables, rates=None, in_prose=False):
     """Classify tokens in a line for syntax highlighting.
 
-    Returns "blank", "comment", "directive", or list of [start, end, role]
-    tuples. The role is one of "dim", "unit", "num", "func", "op" or "text".
+    Returns "blank", "prose", "comment", "directive", or a list of
+    [start, end, role] tuples. The role is one of "dim", "unit", "num", "func",
+    "op", "comment" or "text". A line that does not compute is "prose", so
+    colour marks exactly the lines calced reads.
     """
     stripped = text.strip()
+    if in_prose or stripped == PROSE_FENCE:
+        return "prose"
     if not stripped:
         return "blank"
     if stripped.startswith("#"):
         return "comment"
-    if DIRECTIVE_RE.match(stripped):
-        return "directive"
-    if RATE_RE.match(stripped):
+    if DIRECTIVE_RE.match(stripped) or RATE_RE.match(stripped):
         return "directive"
 
     variables = variables or {}
     tokens = tokenize(text)
-    all_names = set(BUILTIN_CONSTS) | set(variables)
+    conv_span = range(0)
+    computed = False
 
     has_date = any(t[0] == DATE for t in tokens) or any(
         t[0] == "WORD" and isinstance(variables.get(t[1].lower()), datetime.date) for t in tokens
     )
-
-    has_math = any(
-        t[0] in ("NUM", "PCT", "FUNC", "TOTAL", DATE)
-        or (t[0] == "WORD" and t[1].lower() in all_names)
-        for t in tokens
-    )
-
-    active = set()
-    conv_span = range(0)
-
-    if has_date and has_math:
-        # A date expression is active as a whole
+    if has_date:
         if _try_date_eval(tokens, variables) is not None:
-            active.update(i for i, t in enumerate(tokens) if t[0] != "EOF")
+            computed = True
         else:
             # Reduce parenthesized date sub-expressions for classification
             tokens = _reduce_date_subexprs(tokens, variables)
-    if has_math and not active:
-        if any(t[0] == "TOTAL" for t in tokens) and not any(
-            t[0] in ("NUM", "PCT", "FUNC", "WORD", "LPAREN") for t in tokens
-        ):
-            for idx, t in enumerate(tokens):
-                if t[0] == "TOTAL":
-                    active.add(idx)
-        else:
-            math_start = 0
-            if len(tokens) >= 3 and tokens[0][0] == "WORD" and tokens[1][0] == "EQ":
-                active.add(0)
-                active.add(1)
-                math_start = 2
 
-            conv = _detect_conversion(tokens, rates=rates)
-            conversion, conv_start, conv_end = conv
-            if conversion is not None:
-                conv_span = range(conv_start, conv_end)
-                active.update(conv_span)
+    if not computed:
+        math_start = 0
+        if len(tokens) >= 3 and tokens[0][0] == "WORD" and tokens[1][0] == "EQ":
+            math_start = 2
+        conv = _detect_conversion(tokens, rates=rates)
+        all_vars = {**BUILTIN_CONSTS, **variables, ACC_KEY: 0}
+        math_tokens, _ = _build_math(tokens, math_start, all_vars, conv)
+        result, _ = _try_parse(math_tokens)
+        if result is not None:
+            computed = True
+            if conv[0] is not None:
+                conv_span = range(conv[1], conv[2])
 
-            all_vars = {**BUILTIN_CONSTS, **variables, ACC_KEY: 0}
-            math_tokens, math_to_orig = _build_math(tokens, math_start, all_vars, conv)
-            result, consumed = _try_parse(math_tokens)
-
-            if result is not None:
-                for i in range(consumed):
-                    active.add(math_to_orig[i])
-            else:
-                for i, orig_idx in enumerate(math_to_orig):
-                    if math_tokens[i][0] in ("NUM", "PCT"):
-                        active.add(orig_idx)
+    if not computed:
+        return "prose"
 
     spans = []
     pos = 0
@@ -602,7 +596,7 @@ def classify_line(text, variables, rates=None):
         start, end = t[2], t[3]
         if start > pos:
             spans.append([pos, start, "dim"])
-        spans.append([start, end, _span_role(t, idx in active, idx in conv_span)])
+        spans.append([start, end, _span_role(t, idx in conv_span)])
         pos = end
     if pos < len(text):
         spans.append([pos, len(text), "dim"])
@@ -624,7 +618,9 @@ def colorize_expr(text, variables, rates=None):
     return "".join(parts)
 
 
-def colorize_line(line, result, fmt_result_str, align, variables, rates=None, indicator=None):
+def colorize_line(
+    line, result, fmt_result_str, align, variables, rates=None, indicator=None, prose=False
+):
     """Return a colorized version of an output line."""
     stripped = line.strip()
     if result is not None:
@@ -645,9 +641,10 @@ def colorize_line(line, result, fmt_result_str, align, variables, rates=None, in
             + RESET
             + suffix
         )
-    if stripped.startswith("#"):
-        return BOLD + line + RESET
-    if DIRECTIVE_RE.match(stripped) or RATE_RE.match(stripped):
+    if prose:
+        # Prose is markdown, so a heading inside it still reads as a heading.
+        return BOLD + line + RESET if stripped.startswith("#") else line
+    if stripped.startswith("#") or DIRECTIVE_RE.match(stripped) or RATE_RE.match(stripped):
         return DIM + line + RESET
     return line
 
@@ -709,6 +706,10 @@ class Parser:
                 if right == 0:
                     raise ZeroDivisionError
                 left /= right
+            elif op == "//":
+                if right == 0:
+                    raise ZeroDivisionError
+                left = (left / right).to_integral_value(rounding=ROUND_FLOOR)
             elif op == "%":
                 if right == 0:
                     raise ZeroDivisionError
@@ -854,7 +855,10 @@ def _detect_conversion(tokens, rates=None):
 
 
 def _build_math(tokens, start, all_vars, conv):
-    """Build math token list, resolving variables and skipping non-math tokens.
+    """Build the math token list for a line, or (None, None) when it is not code.
+
+    Every token must be accounted for. An unknown word, a stray character or a
+    comma outside a call means the line is prose, so the caller shows no result.
 
     *conv* is the triple returned by _detect_conversion. Returns
     (math_tokens, math_to_orig), where math_to_orig[i] is the original token
@@ -874,15 +878,19 @@ def _build_math(tokens, start, all_vars, conv):
                     pairs.append((("MULOP", "*", t[2], t[3]), idx))
                     pairs.append((("NUM", factor, t[2], t[3]), idx))
             continue
+        if t[0] == "COMMENT":
+            continue
         if t[0] == "WORD":
             wl = t[1].lower()
-            if wl in all_vars and not isinstance(all_vars[wl], datetime.date):
-                pairs.append((("NUM", all_vars[wl], t[2], t[3]), idx))
+            if wl not in all_vars or isinstance(all_vars[wl], datetime.date):
+                return None, None
+            pairs.append((("NUM", all_vars[wl], t[2], t[3]), idx))
         elif t[0] == "TOTAL":
-            if ACC_KEY in all_vars:
-                pairs.append((("NUM", all_vars[ACC_KEY], t[2], t[3]), idx))
-        elif t[0] in ("EQ", DATE) or (t[0] == "COMMA" and paren_depth == 0):
-            pass
+            if ACC_KEY not in all_vars:
+                return None, None
+            pairs.append((("NUM", all_vars[ACC_KEY], t[2], t[3]), idx))
+        elif t[0] in ("EQ", DATE, "UNKNOWN") or (t[0] == "COMMA" and paren_depth == 0):
+            return None, None
         else:
             if t[0] == "LPAREN":
                 paren_depth += 1
@@ -890,94 +898,25 @@ def _build_math(tokens, start, all_vars, conv):
                 paren_depth -= 1
             pairs.append((t, idx))
 
-    pairs = _strip_empty_parens(pairs)
-    pairs = _strip_orphan_ops(pairs, start)
     return [t for t, _ in pairs], [i for _, i in pairs]
 
 
-def _strip_empty_parens(pairs):
-    """Drop parens left empty (or holding only commas) after WORDs were skipped."""
-    changed = True
-    while changed:
-        changed = False
-        out = []
-        i = 0
-        while i < len(pairs):
-            if pairs[i][0][0] == "LPAREN":
-                j = i + 1
-                while j < len(pairs) and pairs[j][0][0] == "COMMA":
-                    j += 1
-                if j < len(pairs) and pairs[j][0][0] == "RPAREN":
-                    i = j + 1
-                    changed = True
-                    continue
-            out.append(pairs[i])
-            i += 1
-        pairs = out
-    return pairs
-
-
-def _strip_orphan_ops(pairs, start):
-    """Drop operators left dangling after WORDs were skipped.
-
-    A leading or doubled operator goes away, except a unary minus. A MULOP stays
-    so that the parse fails, instead of silently exposing the numbers after it.
-    """
-    changed = True
-    while changed:
-        changed = False
-        out = []
-        for i, (t, orig) in enumerate(pairs):
-            if t[0] in ("ADDOP", "MULOP"):
-                prev = out[-1][0][0] if out else None
-                nxt = pairs[i + 1][0][0] if i + 1 < len(pairs) else "EOF"
-                if prev is None or prev in ("ADDOP", "MULOP"):
-                    unary_minus = (
-                        t[0] == "ADDOP"
-                        and t[1] == "-"
-                        and nxt in ("NUM", "LPAREN", "FUNC")
-                        # a leading minus must be the first token of the expression
-                        and (prev is not None or orig == start)
-                    )
-                    if t[0] != "MULOP" and not unary_minus:
-                        changed = True
-                        continue
-                elif nxt in ("EOF", "RPAREN"):
-                    changed = True
-                    continue
-            out.append((t, orig))
-        pairs = out
-    return pairs
-
-
-def _is_annotation(tokens):
-    """True when the tokens are only balanced parenthetical notes, e.g. "(net 30)"."""
-    depth = 0
-    for t in tokens:
-        if t[0] == "EOF":
-            break
-        if depth == 0 and t[0] != "LPAREN":
-            return False
-        if t[0] == "LPAREN":
-            depth += 1
-        elif t[0] == "RPAREN":
-            depth -= 1
-    return depth == 0
-
-
 def _try_parse(math_tokens):
-    """Parse math tokens, allowing trailing balanced parenthetical annotations.
+    """Parse math tokens. The parser must consume all of them.
 
     Returns (result, consumed) on success, or (None, -1) on failure.
     """
+    if math_tokens is None:
+        return None, -1
     try:
         parser = Parser(math_tokens)
         result = parser.parse_expr()
-        if _is_annotation(math_tokens[parser.pos :]):
-            return result, parser.pos
-        return None, -1
     except (ParseError, ArithmeticError, ValueError):
         return None, -1
+    rest = math_tokens[parser.pos :]
+    if rest and rest[0][0] != "EOF":
+        return None, -1
+    return result, parser.pos
 
 
 def _reduce_date_subexprs(tokens, variables):
@@ -1069,8 +1008,8 @@ def _try_date_eval_inner(tokens, variables):
         var_name = toks[0][1].lower()
         toks = toks[2:]
 
-    # Filter out EOF for pattern matching
-    body = [t for t in toks if t[0] != "EOF"]
+    # Filter out EOF and a trailing comment for pattern matching
+    body = [t for t in toks if t[0] not in ("EOF", "COMMENT")]
     if not body:
         return None
 
@@ -1106,18 +1045,8 @@ def _try_date_eval_inner(tokens, variables):
             secs = -secs
         return _finish(secs / UNTIL_UNIT_SECONDS[unit])
 
-    # Strip leading label tokens before the first DATE for remaining patterns
-    labels_stripped = False
-    first_date_idx = next((i for i, t in enumerate(body) if t[0] == DATE), None)
-    if first_date_idx is not None and first_date_idx > 0:
-        if all(t[0] in ("WORD", "LPAREN", "RPAREN", "COMMA") for t in body[:first_date_idx]):
-            body = body[first_date_idx:]
-            labels_stripped = True
-
     # Pattern 0: bare DATE (e.g., "today", "2025-01-15")
     if len(body) == 1 and body[0][0] == DATE:
-        if labels_stripped:
-            return None
         return _finish(body[0][1])
 
     # Pattern 2: DATE ± expr duration_unit (supports compound: + 1 week + 3 days)
@@ -1159,7 +1088,7 @@ def _try_date_eval_inner(tokens, variables):
             else:  # year, years
                 d = _add_months(d, n * 12)
             pos = dur_pos + 1
-        if ok and _is_annotation(body[pos:]):
+        if ok and pos == len(body):
             return _finish(d)
 
     # Pattern 3: DATE - DATE → days, or hours once either side carries a time
@@ -1321,8 +1250,8 @@ def format_result(n, fmt_opts=None):
 
 Line = collections.namedtuple(
     "Line",
-    "clean result fmt_opts variables rates is_total",
-    defaults=(None, None, None, None, False),
+    "clean result fmt_opts variables rates is_total ends_block",
+    defaults=(None, None, None, None, False, False),
 )
 
 
@@ -1360,23 +1289,34 @@ def _process_lines(content):
     rates = {}
     results_acc = []
     fmt_opts = dict(DEFAULT_FMT_OPTS)
+    in_prose = False
 
     for line in lines:
         clean = RESULT_RE.sub("", line).rstrip()
         stripped = clean.strip()
+
+        # A prose block holds markdown. Nothing inside it is read.
+        if stripped == PROSE_FENCE:
+            in_prose = not in_prose
+            results_acc.clear()
+            yield Line(clean, ends_block=True)
+            continue
+        if in_prose:
+            yield Line(clean, ends_block=True)
+            continue
+
+        # A blank line ends the block, so it bounds the total above it.
+        if not stripped:
+            results_acc.clear()
+            yield Line("", ends_block=True)
+            continue
 
         if _apply_directive(stripped, fmt_opts, rates):
             yield Line(clean)
             continue
 
         if stripped.startswith("#"):
-            results_acc.clear()
             yield Line(clean)
-            continue
-
-        if not stripped:
-            results_acc.append(None)
-            yield Line("")
             continue
 
         vars_before = dict(variables)
@@ -1393,14 +1333,18 @@ def _process_lines(content):
 
 
 def _split_sections(evaluated):
-    """Split the lines into sections. A header line starts a new section."""
+    """Split the lines into blocks.
+
+    A block is a run of consecutive lines that are neither blank nor prose. It
+    bounds the total, the decimal alignment and the total indicators alike.
+    """
     sections = []
     current = []
     for line in evaluated:
-        if current and line.result is None and line.clean.strip().startswith("#"):
+        current.append(line)
+        if line.ends_block:
             sections.append(current)
             current = []
-        current.append(line)
     if current:
         sections.append(current)
     return sections
@@ -1460,7 +1404,9 @@ def _format_section(section, use_color):
         if line.result is None:
             out.append(line.clean)
             if use_color:
-                col.append(colorize_line(line.clean, None, None, align, None))
+                col.append(
+                    colorize_line(line.clean, None, None, align, None, prose=line.ends_block)
+                )
             continue
         padded = fmt_str.ljust(ind_width) if indicator else fmt_str
         suffix = f" {indicator}" if indicator else ""

@@ -84,8 +84,13 @@ def _expression(rnd):
         return f"{_num(rnd)} {rnd.choice(OPS)} {_num(rnd)} {rnd.choice(OPS)} {_num(rnd)}"
     if k < 0.45:
         return f"{rnd.choice(FUNCS)}({_num(rnd)})"
-    if k < 0.53:
+    if k < 0.50:
         return f"{_num(rnd)} ^ {rnd.choice(['2', '3', '4', '0.5', '-1', '-2', '1.5', '0.25'])}"
+    if k < 0.52:
+        return f"{_num(rnd)} ** {rnd.choice(['2', '3', '0.5', '-1'])}"
+    if k < 0.53:
+        # Floor division has to round the same way toward minus infinity.
+        return f"{rnd.choice(['', '-'])}{_num(rnd)} // {_num(rnd)}"
     if k < 0.61:
         return f"({_num(rnd)} + {_num(rnd)}) / ({_num(rnd)} - {_num(rnd)})"
     if k < 0.68:
@@ -140,7 +145,7 @@ def _js_results(docs):
     return json.loads(proc.stdout)
 
 
-FLOAT_PATH = tuple(FUNCS) + ("^",)
+FLOAT_PATH = tuple(FUNCS) + ("^", "**")
 LIBM_BUDGET = 0.001  # share of results allowed to differ only in the last digits
 
 

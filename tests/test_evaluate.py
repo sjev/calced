@@ -102,15 +102,16 @@ class TestEvaluate(unittest.TestCase):
         r, *_ = evaluate_line("1k + 500", {})
         self.assertEqual(r, 1500)
 
-    def test_label_with_operator(self):
-        """Text labels around operators should be ignored."""
+    def test_label_with_operator_is_prose(self):
+        """Unknown words make the line prose. Use a name or a comment instead."""
         r, *_ = evaluate_line("price 10 + tax 5", {})
-        self.assertEqual(r, 15)
+        self.assertIsNone(r)
 
-    def test_label_with_conversion(self):
-        """Text label before unit conversion."""
+    def test_label_with_conversion_is_prose(self):
+        """A label before a conversion is prose; the conversion alone still works."""
         r, *_ = evaluate_line("distance 100 km in miles", {})
-        self.assertIsNotNone(r)
+        self.assertIsNone(r)
+        r, *_ = evaluate_line("100 km in miles", {})
         self.assertAlmostEqual(float(r), 62.137, places=2)
 
     def test_variable_with_conversion(self):
@@ -167,12 +168,44 @@ class TestEvaluate(unittest.TestCase):
         self.assertIsNotNone(output[1]["result"])
         self.assertAlmostEqual(output[1]["result"], 6.214, places=2)
 
-    # --- Known limitations: document current behavior ---
+    # --- A line computes only when every token is consumed ---
 
-    def test_leading_paren_label_evaluates(self):
-        """(label) before expression evaluates the numeric part."""
+    def test_leading_paren_label_is_prose(self):
+        """(label) before an expression no longer evaluates."""
         r, *_ = evaluate_line("(just) 100", {})
-        self.assertEqual(r, 100)
+        self.assertIsNone(r)
+
+    def test_trailing_annotation_is_prose(self):
+        """A trailing note in parens is no longer tolerated."""
+        r, *_ = evaluate_line("rent 2000 (monthly)", {})
+        self.assertIsNone(r)
+
+    def test_unknown_character_is_prose(self):
+        """A stray character fails the line instead of disappearing."""
+        r, *_ = evaluate_line("Knop 1 is x: het verschil", {"x": Decimal(60)})
+        self.assertIsNone(r)
+        r, *_ = evaluate_line("2 + 3:", {})
+        self.assertIsNone(r)
+
+    def test_comma_is_not_a_thousands_separator(self):
+        """19,5 used to parse as 195."""
+        self.assertIsNone(evaluate_line("19,5", {})[0])
+        self.assertIsNone(evaluate_line("10,000", {})[0])
+        self.assertEqual(evaluate_line("10_000", {})[0], 10000)
+
+    def test_comment_is_ignored(self):
+        r, *_ = evaluate_line("3.50  # bread", {})
+        self.assertEqual(r, Decimal("3.50"))
+        r, v, *_ = evaluate_line("x = 2 + 3  # note", {})
+        self.assertEqual(r, 5)
+        self.assertEqual(v["x"], 5)
+        self.assertIsNone(evaluate_line("# just a comment", {})[0])
+
+    def test_python_operators(self):
+        self.assertEqual(evaluate_line("2 ** 10", {})[0], 1024)
+        self.assertEqual(evaluate_line("2 ^ 10", {})[0], 1024)
+        self.assertEqual(evaluate_line("7 // 2", {})[0], 3)
+        self.assertEqual(evaluate_line("-7 // 2", {})[0], -4)
 
     def test_pct_then_multiply_returns_none(self):
         """200 + 10% * 2 currently returns None.
@@ -190,31 +223,17 @@ class TestEvaluate(unittest.TestCase):
         r, *_ = evaluate_line("2025-01-01 + 1 week + 3 days", {})
         self.assertEqual(r, datetime.date(2025, 1, 11))
 
-    def test_label_before_date_arithmetic(self):
-        """Text label before date + duration evaluates as date math."""
-        r, *_ = evaluate_line("note 2025-06-15 + 3 days", {})
+    def test_label_before_date_is_prose(self):
+        """A label before date math no longer evaluates."""
+        self.assertIsNone(evaluate_line("note 2025-06-15 + 3 days", {})[0])
+        self.assertIsNone(evaluate_line("(deadline) 2025-06-15 + 3 days", {})[0])
+        self.assertIsNone(evaluate_line("(info) 2025-06-15", {})[0])
+        self.assertIsNone(evaluate_line("gap 2025-03-01 - 2025-01-01", {})[0])
+        self.assertIsNone(evaluate_line("d = (project) 2025-06-15 + 3 days", {})[0])
+
+    def test_date_with_comment(self):
+        r, *_ = evaluate_line("2025-06-15 + 3 days  # deadline", {})
         self.assertEqual(r, datetime.date(2025, 6, 18))
-
-    def test_paren_label_before_date_arithmetic(self):
-        """Parenthesized label before date + duration evaluates as date math."""
-        r, *_ = evaluate_line("(deadline) 2025-06-15 + 3 days", {})
-        self.assertEqual(r, datetime.date(2025, 6, 18))
-
-    def test_paren_label_before_bare_date(self):
-        """Parenthesized label before bare date is treated as plain text."""
-        r, *_ = evaluate_line("(info) 2025-06-15", {})
-        self.assertIsNone(r)
-
-    def test_label_before_date_difference(self):
-        """Text label before DATE - DATE returns day count."""
-        r, *_ = evaluate_line("gap 2025-03-01 - 2025-01-01", {})
-        self.assertEqual(r, 59)
-
-    def test_assign_with_label_before_date(self):
-        """Assignment with parenthesized label and date arithmetic."""
-        r, v, *_ = evaluate_line("d = (project) 2025-06-15 + 3 days", {})
-        self.assertEqual(r, datetime.date(2025, 6, 18))
-        self.assertEqual(v["d"], datetime.date(2025, 6, 18))
 
 
 if __name__ == "__main__":

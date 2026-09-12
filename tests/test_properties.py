@@ -405,7 +405,7 @@ def test_sqrt_squared(a):
 
 
 # ---------------------------------------------------------------------------
-# 10. Text label invariance: label prefix should not change result
+# 10. A label makes the line prose: every token must be consumed
 # ---------------------------------------------------------------------------
 
 _labels = st.sampled_from(["rent", "price", "cost", "total_value", "result"])
@@ -413,13 +413,11 @@ _labels = st.sampled_from(["rent", "price", "cost", "total_value", "result"])
 
 @given(expr=simple_expressions(), label=_labels)
 @settings(max_examples=200)
-def test_label_prefix_does_not_change_result(expr, label):
-    """Prepending a text label should not change the numeric result."""
-    r_plain, *_ = evaluate_line(expr, {})
-    assume(r_plain is not None)
-    r_labeled, *_ = evaluate_line(f"{label} {expr}", {})
-    assert r_labeled is not None, f"'{label} {expr}' returned None but '{expr}' returned {r_plain}"
-    assert r_plain == r_labeled, f"'{label} {expr}' = {r_labeled}, but '{expr}' = {r_plain}"
+def test_label_prefix_makes_the_line_prose(expr, label):
+    """An unknown word is not dropped, so the line no longer computes."""
+    assume(evaluate_line(expr, {})[0] is not None)
+    r, *_ = evaluate_line(f"{label} {expr}", {})
+    assert r is None, f"'{label} {expr}' returned {r}"
 
 
 _paren_labels = st.sampled_from(["(note)", "(monthly)", "(info)", "(cost)"])
@@ -427,17 +425,14 @@ _paren_labels = st.sampled_from(["(note)", "(monthly)", "(info)", "(cost)"])
 
 @given(expr=simple_expressions(), label=_paren_labels)
 @settings(max_examples=200)
-def test_paren_label_prefix_does_not_change_result(expr, label):
-    """Prepending a parenthesized label should not change the numeric result."""
-    r_plain, *_ = evaluate_line(expr, {})
-    assume(r_plain is not None)
-    r_labeled, *_ = evaluate_line(f"{label} {expr}", {})
-    assert r_labeled is not None, f"'{label} {expr}' returned None but '{expr}' returned {r_plain}"
-    assert r_plain == r_labeled, f"'{label} {expr}' = {r_labeled}, but '{expr}' = {r_plain}"
+def test_paren_label_prefix_makes_the_line_prose(expr, label):
+    assume(evaluate_line(expr, {})[0] is not None)
+    r, *_ = evaluate_line(f"{label} {expr}", {})
+    assert r is None, f"'{label} {expr}' returned {r}"
 
 
 # ---------------------------------------------------------------------------
-# 11. Trailing parenthetical annotation invariance
+# 11. A trailing annotation makes the line prose; a comment does not
 # ---------------------------------------------------------------------------
 
 _annotations = st.sampled_from(["(note)", "(monthly)", "(see docs)", "(estimated)"])
@@ -445,17 +440,20 @@ _annotations = st.sampled_from(["(note)", "(monthly)", "(see docs)", "(estimated
 
 @given(expr=simple_expressions(), annotation=_annotations)
 @settings(max_examples=200)
-def test_trailing_annotation_does_not_change_result(expr, annotation):
-    """Trailing parenthetical annotation should not change the numeric result."""
+def test_trailing_annotation_makes_the_line_prose(expr, annotation):
+    assume(evaluate_line(expr, {})[0] is not None)
+    r, *_ = evaluate_line(f"{expr} {annotation}", {})
+    assert r is None, f"'{expr} {annotation}' returned {r}"
+
+
+@given(expr=simple_expressions(), note=_labels)
+@settings(max_examples=200)
+def test_trailing_comment_does_not_change_result(expr, note):
+    """A comment is the supported way to label a line."""
     r_plain, *_ = evaluate_line(expr, {})
     assume(r_plain is not None)
-    r_annotated, *_ = evaluate_line(f"{expr} {annotation}", {})
-    assert r_annotated is not None, (
-        f"'{expr} {annotation}' returned None but '{expr}' returned {r_plain}"
-    )
-    assert r_plain == r_annotated, (
-        f"'{expr} {annotation}' = {r_annotated}, but '{expr}' = {r_plain}"
-    )
+    r_noted, *_ = evaluate_line(f"{expr}  # {note}", {})
+    assert r_plain == r_noted, f"'{expr}  # {note}' = {r_noted}, but '{expr}' = {r_plain}"
 
 
 # ---------------------------------------------------------------------------
@@ -466,17 +464,12 @@ def test_trailing_annotation_does_not_change_result(expr, annotation):
 @given(expr=simple_expressions())
 @settings(max_examples=200)
 def test_classify_evaluate_consistency(expr):
-    """If evaluate_line returns a result, classify_line should have active tokens."""
-    result, *_ = evaluate_line(expr, {})
+    """A line computes if and only if it is highlighted."""
+    result, *_ = evaluate_line(expr, {}, results_acc=[])
     cls = classify_line(expr, {})
-    if result is not None:
-        assert not isinstance(cls, str), (
-            f"evaluate returned {result} but classify returned '{cls}' for '{expr}'"
-        )
-        has_active = any(not dim for _, _, dim in cls)
-        assert has_active, (
-            f"evaluate returned {result} but classify has no active tokens for '{expr}'"
-        )
+    assert (result is not None) == (not isinstance(cls, str)), (
+        f"evaluate returned {result} but classify returned {cls!r} for '{expr}'"
+    )
 
 
 # ---------------------------------------------------------------------------

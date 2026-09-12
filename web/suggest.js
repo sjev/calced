@@ -153,8 +153,12 @@ function suggest(text, caret, force, values) {
   const none = { items: [], start: caret, end: caret };
   const lineStart = text.lastIndexOf("\n", caret - 1) + 1;
   const before = text.slice(lineStart, caret);
-  if (/^\s*#/.test(before)) return none;
+  // A comment runs to the end of the line, so nothing after "#" is code.
+  if (before.includes("#")) return none;
   const head = text.slice(0, lineStart);
+  // An odd number of fences above means the caret sits inside a prose block.
+  const fences = head.split("\n").filter(l => l.trim() === '"""').length;
+  if (fences % 2 === 1) return none;
 
   let m = before.match(/^\s*@format\s*=\s*(\w*)$/i);
   if (m) return _pick(SUGGEST_FORMATS.map(([n, i, d]) => _item(n, i, d, "value")), m[1], caret, force);
