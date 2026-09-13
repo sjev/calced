@@ -1,15 +1,26 @@
 # calced
 
-Write math anywhere in plain text. Results appear on the right.
+Write math in plain text. Results appear on the right.
 Edit any line to see the result change. Changes here are not saved.
 
-# Basics
+Every line is a calculation. A line calced cannot read in full shows no
+result, so prose costs you nothing. There is nothing to fence off.
 
 2 + 3                                   # =>     5
 10 * (4 + 6)                            # =>   100
+2 ** 10                                 # => 1_024
 2 ^ 10                                  # => 1_024
+7 // 2                                  # =>     3
 17 % 5                                  # =>     2
 (100 + 50) * 2                          # =>   300
+
+# Comments
+
+A `#` starts a comment, as in Python. Use one to label a line or to write
+a markdown heading.
+
+3.50                                    # bread                  # =>   3.5
+1600 / 12                               # verzekering per maand  # => 133.3333333
 
 # Variables
 
@@ -21,16 +32,13 @@ total = price * qty                     # => 300
 
 # Totals
 
-A bare number counts towards the total. sum() adds the numbers above it.
+sum() adds the lines above it. A blank line or an earlier total bounds
+what it reaches.
 
-bread 3.50                              # =>  3.5  │
-milk 2 * 1.20                           # =>  2.4  │
-eggs 4.95                               # =>  4.95 │
-sum()                                   # => 10.85 ┘
-
-A heading starts a new section, with its own sum.
-
-# Second section
+3.50                                    # bread  # =>  3.5  │
+2 * 1.20                                # milk   # =>  2.4  │
+4.95                                    # eggs   # =>  4.95 │
+sum()                                            # => 10.85 ┘
 
 100                                     # => 100 │
 200                                     # => 200 │
@@ -39,6 +47,8 @@ subtotal * 2                            # => 600
 
 # Percentages
 
+`of` takes a part of a number. `as` gives a number as a part of another.
+
 income = 5000                           # => 5_000
 tax_rate = 22%                          # =>     0.22
 tax = income * tax_rate                 # => 1_100
@@ -46,6 +56,7 @@ after_tax = income - tax                # => 3_900
 50% of 300                              # =>   150
 200 + 15%                               # =>   230
 200 - 10%                               # =>   180
+10 as % of 50                           # =>    20
 
 # SI prefixes
 
@@ -56,7 +67,10 @@ after_tax = income - tax                # => 3_900
 
 # Unit conversions
 
+`to` and `in` mean the same thing.
+
 5 km in miles                           # =>     3.106855961
+5 km to miles                           # =>     3.106855961
 100 C in F                              # =>   212
 1 gib in mib                            # => 1_024
 60 min in hr                            # =>     1
@@ -67,8 +81,8 @@ after_tax = income - tax                # => 3_900
 Define your own rate, then convert with it.
 
 @rate USD/EUR = 0.92
-100 USD in EUR                          # =>     92
-50 EUR in USD                           # =>     54.34782609
+100 USD in EUR                          # => 92
+50 EUR in USD                           # => 54.34782609
 
 @rate BTC/USD = 97500
 0.5 BTC in USD                          # => 48_750
@@ -92,6 +106,8 @@ e                                       # =>  2.718281828
 
 date() gives today. now() gives the current time. Fixed dates work too.
 
+`days until 2026-12-31` and `weeks since 2026-01-01` count from today.
+
 2025-01-15 + 3 days                     # => 2025-01-18
 2025-01-31 + 1 month                    # => 2025-02-28
 2025-03-01 - 2025-01-01                 # => 59
@@ -105,21 +121,18 @@ deadline - 2025-06-15                   # => 14
 
 # Number formats
 
-0xff                                    # =>   255
-0b1010                                  # =>    10
-0o17                                    # =>    15
-1.5e3                                   # => 1_500
+Group digits with `_`. A comma is not a separator and not a decimal point.
 
-# Trailing annotations
-
-Text after the number is kept. A line with no math stays untouched.
-
-rent 1500 (monthly)                     # => 1_500
-budget 2000 EUR                         # => 2_000
+0xff                                    # =>       255
+0b1010                                  # =>        10
+0o17                                    # =>        15
+1.5e3                                   # =>     1_500
+1_000_000                               # => 1_000_000
 
 # Format directives
 
-1000000                                 # => 1_000_000
+Modes: `minSig`, `fixed`, `scientific`, `eng` and `auto`. Each takes a digit
+count. Separators: `underscore`, `comma`, `space` and `off`.
 
 @format = fixed(2)
 1000000                                 # => 1_000_000.00
@@ -138,8 +151,8 @@ Suggestions appear as you type. Ctrl+Space shows the full list.
 
 # Privacy
 
-Your document stays in the browser. Calculation is local, and a shared link holds
-the text in the URL itself.
+Your document stays in the browser. Calculation is local, and a shared link
+holds the text in the URL itself.
 
 The page counts anonymous pageviews with a self-hosted Umami instance.
 It sets no cookies and keeps no personal data.

@@ -50,30 +50,32 @@ b = a + 5                               # => 15
 c = b * 2                               # => 30
 a + b + c                               # => 55
 
-# Text Labels with Expressions
+# Labels are names or comments now
 
-monthly 10 + yearly 5                   # =>  15
-distance 100 km in miles                # =>  62.13711922
-fee 200 + 15%                           # => 230
-answer sqrt(16)                         # =>   4
+monthly = 10                                            # =>    10
+yearly = 5                                              # =>     5
+monthly + yearly                                        # =>    15
+distance = 100 km in miles                              # =>    62.13711922
+200 + 15%                               # fee           # =>   230
+sqrt(16)                                # answer        # =>     4
+1500                                    # monthly rent  # => 1_500
+100                                     # plus tax      # =>   100
 
-# Text with Trailing Annotations
+# A label the engine cannot read makes the line prose
 
-1500 (monthly rent)                     # => 1_500
-100 (plus tax)                          # =>   100
-
-# Parenthesized Text Labels
-
-(just) 100                              # =>   100
-(note) 100 + 50                         # =>   150
-rent (monthly) 1500                     # => 1_500
-(tax) 200 + 10%                         # =>   220
-(weight) 150 lb in kg                   # =>    68.0388
-(area) sqrt(144)                        # =>    12
-(note) 1k + 500                         # => 1_500
-(first) 10 + (second) 20                # =>    30
-((deep)) 100                            # =>   100
-(foo) (bar) 100                         # =>   100
+monthly 10 + yearly 5
+distance 100 km in miles
+(just) 100
+(note) 100 + 50
+rent (monthly) 1500
+(tax) 200 + 10%
+(weight) 150 lb in kg
+(area) sqrt(144)
+(note) 1k + 500
+(first) 10 + (second) 20
+((deep)) 100
+(foo) (bar) 100
+1500 (monthly rent)
 
 # Date Arithmetic with Expressions
 
@@ -90,13 +92,19 @@ rent (monthly) 1500                     # => 1_500
 2025-01-01 + 1 week + 1 week                    # => 2025-01-15
 2025-01-01 + 1 week + 2 * 3 days                # => 2025-01-14
 
-# Labels Before Date Arithmetic
+# Dates with a comment
 
-note 2025-06-15 + 3 days                # => 2025-06-18
-(deadline) 2025-06-15 + 3 days          # => 2025-06-18
+2025-06-15 + 3 days                     # deadline  # => 2025-06-18
+2025-01-01 + 1 week + 3 days            # plan      # => 2025-01-11
+2025-03-01 - 2025-01-01                 # gap       # => 59
+
+# A label before date arithmetic makes the line prose
+
+note 2025-06-15 + 3 days
+(deadline) 2025-06-15 + 3 days
 (info) 2025-06-15
-(plan) 2025-01-01 + 1 week + 3 days     # => 2025-01-11
-gap 2025-03-01 - 2025-01-01             # => 59
+(plan) 2025-01-01 + 1 week + 3 days
+gap 2025-03-01 - 2025-01-01
 
 # Leap Year Dates
 

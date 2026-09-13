@@ -1,7 +1,7 @@
 @rate USD/EUR = 0.92
 
-100 USD in EUR                          # =>     92
-50 EUR in USD                           # =>     54.34782609
+100 USD in EUR                          # => 92
+50 EUR in USD                           # => 54.34782609
 
 @rate BTC/USD = 97500
 
@@ -21,8 +21,8 @@ budget                                  # => 920
 1 ETH in CELO                           # => 24_915.66265
 0.5 BTC in EUR                          # => 44_850
 
-# Trailing text with hyphenated word (orphaned operator stripping)
-Other non-CELO (converted, approx) 437  # => 437
+# Trailing text with a hyphenated word is prose
+Other non-CELO (converted, approx) 437
 
 # Inline conversion with trailing arithmetic
 earn_USD = 100                          # =>   100

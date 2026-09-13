@@ -29,8 +29,9 @@ deadline - 2025-06-15                   # => 14
 200                                     # => 200        │
 sum()                                   # => 300        ┘
 
-# Trailing Text After a Date Expression
+# Trailing text makes the line prose. Use a comment instead.
 
-2025-01-01 + 30 days (net 30)           # => 2025-01-31
-2025-01-01 + 1 day rescheduled          # => 1
-2025-01-01 + 1.5 days                   # => 2025-01-02
+2025-01-01 + 30 days (net 30)
+2025-01-01 + 1 day rescheduled
+2025-01-01 + 30 days                    # net 30  # => 2025-01-31
+2025-01-01 + 1.5 days                             # => 2025-01-02

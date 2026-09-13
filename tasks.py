@@ -1,7 +1,6 @@
 # type: ignore
 """Automation tasks. Run `inv -l` for the list."""
 
-import glob
 import re
 import shutil
 from pathlib import Path
@@ -10,9 +9,7 @@ from tempfile import mkdtemp
 import tomllib
 from invoke import task
 
-SOURCES = "python tests tasks.py"
 SITE_URL = "https://sjev.github.io/calced"
-REPO_URL = "https://github.com/sjev/calced"
 
 
 @task
@@ -22,102 +19,11 @@ def venv(c):
 
 
 @task
-def format(c):
-    """Format code."""
-    c.run(f"uv run ruff format {SOURCES}")
-
-
-@task
-def lint(c):
-    """Run linters."""
-    c.run(f"uv run ruff check {SOURCES}")
-    c.run(f"uv run ruff format --check {SOURCES}")
-
-
-@task
-def test_py(c):
-    """Run the Python unit tests and the .md integration tests."""
-    c.run("uv run python -m unittest discover -s tests")
-    for path in sorted(glob.glob("tests/*.md")) + ["web/docs.md"]:
-        c.run(f"uv run python python/calced.py {path}")
-    # the fixtures must not change; web/docs.md is the docs and a fixture at the same time
-    c.run("git diff --exit-code -- tests/*.md web/docs.md")
-
-
-@task
-def test_js(c):
-    """Run the JavaScript tests."""
+def test(c):
+    """Run all tests."""
     c.run("node web/test.mjs")
     c.run("node web/test-suggest.mjs")
     c.run("node web/test-store.mjs")
-
-
-@task
-def test(c):
-    """Run all tests (Python + JS)."""
-    test_py(c)
-    test_js(c)
-
-
-@task
-def test_diff(c):
-    """Run generated cases through both engines; any difference fails."""
-    c.run("uv run python -m unittest tests.test_differential -v", env={"CALCED_FUZZ_N": "3000"})
-
-
-@task
-def test_property(c):
-    """Run the property-based tests."""
-    c.run("uv run pytest tests/test_properties.py -v")
-
-
-@task
-def ci(c):
-    """Run lint and tests."""
-    lint(c)
-    test(c)
-    print("All checks passed!")
-
-
-@task
-def readme(c):
-    """Regenerate README.md from its inline examples."""
-    c.run("uv run cog -r README.md")
-
-
-# (file, pattern, replacement). The pattern must match whatever value is there now,
-# so a later URL change needs an edit here only.
-URL_PATTERNS = [
-    ("python/calced.py", r'^SITE_URL = ".*"$', f'SITE_URL = "{SITE_URL}"'),
-    ("python/calced.py", r'^REPO_URL = ".*"$', f'REPO_URL = "{REPO_URL}"'),
-    ("pyproject.toml", r'^Homepage = ".*"$', f'Homepage = "{SITE_URL}"'),
-    ("pyproject.toml", r'^Repository = ".*"$', f'Repository = "{REPO_URL}"'),
-    ("pyproject.toml", r'^Issues = ".*"$', f'Issues = "{REPO_URL}/issues"'),
-    ("web/index.html", r'"og:image" content=".*"', f'"og:image" content="{SITE_URL}/og.png"'),
-    ("web/index.html", r'"og:url" content=".*"', f'"og:url" content="{SITE_URL}"'),
-    ("README.md", r"\[Open the web app\]\(.*\)", f"[Open the web app]({SITE_URL})"),
-]
-
-
-@task
-def sync_urls(c):
-    """Write SITE_URL and REPO_URL into every file that shows them."""
-    for name, pattern, replacement in URL_PATTERNS:
-        path = Path(name)
-        text = path.read_text()
-        new_text, count = re.subn(pattern, replacement, text, flags=re.MULTILINE)
-        if count == 0:
-            raise SystemExit(f"Error: no match for {pattern!r} in {name}")
-        if new_text != text:
-            path.write_text(new_text)
-            print(f"updated {name}")
-    readme(c)  # the README reference block comes from web/docs.md
-
-
-@task
-def build(c):
-    """Build the Python distribution."""
-    c.run("uv build")
 
 
 def _version() -> str:
@@ -221,22 +127,14 @@ def deploy_web(c):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-@task(pre=[build])
-def release_python(c):
-    """Publish the built distribution to PyPI."""
-    c.run("uv publish dist/*")
-
-
 @task
 def release(c):
     """Test and publish the current version. Use `inv bump` first."""
     test(c)
-    readme(c)
     if c.run("git status --porcelain", hide=True).stdout.strip():
         raise SystemExit("Error: working directory is dirty. Commit changes first.")
 
     print(f"Releasing v{_version()}...")
-    release_python(c)
     deploy_web(c)
     c.run("git push origin master")
     print(f"Released v{_version()}")

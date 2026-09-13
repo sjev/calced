@@ -4,16 +4,18 @@
  * Imports the engine modules and runs:
  *   1. Unit vectors from tests/classify_vectors.json and tests/evaluate_vectors.json
  *   2. Integration tests from tests/*.md and web/docs.md
+ * Pass --update to rewrite the .md files with the current results.
  */
-import { readFileSync, readdirSync } from "fs";
+import { readFileSync, readdirSync, writeFileSync } from "fs";
 import { basename, join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { processText, classifyLine } from "./document.js";
+import { processText, classifyLine, formatForFile } from "./document.js";
 import { evaluateLine } from "./evaluate.js";
 import { formatResult } from "./format.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const testsDir = join(__dirname, "..", "tests");
+const UPDATE = process.argv.includes("--update");
 
 // --- Unit vector tests ---
 let unitFailures = 0;
@@ -21,7 +23,7 @@ let unitFailures = 0;
 const classifyVectors = JSON.parse(readFileSync(join(testsDir, "classify_vectors.json"), "utf8"));
 for (let i = 0; i < classifyVectors.length; i++) {
   const v = classifyVectors[i];
-  const result = classifyLine(v.text, v.variables);
+  const result = classifyLine(v.text, v.variables, null);
   if (JSON.stringify(result) !== JSON.stringify(v.expected)) {
     console.error(`FAIL classify vector ${i}: ${JSON.stringify(v.text)}`);
     if (v.note) console.error(`  note: ${v.note}`);
@@ -66,7 +68,7 @@ let failedFiles = [];
 
 const files = readdirSync(testsDir).filter(f => f.endsWith(".md")).sort()
   .map(f => join(testsDir, f));
-files.push(join(__dirname, "docs.md"));  // the docs must hold in both engines
+files.push(join(__dirname, "docs.md"));  // every example in the docs is a test
 
 for (const path of files) {
   const file = basename(path);
@@ -93,6 +95,12 @@ for (const path of files) {
   }
 
   const pureInput = inputLines.join("\n");
+  // --update rewrites the fixture from the engine; review the result with git diff.
+  if (UPDATE) {
+    writeFileSync(path, formatForFile(pureInput) + "\n");
+    console.log(`WROTE ${file}`);
+    continue;
+  }
   const results = processText(pureInput);
 
   let filePassed = 0;

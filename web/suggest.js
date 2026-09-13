@@ -153,7 +153,8 @@ function suggest(text, caret, force, values) {
   const none = { items: [], start: caret, end: caret };
   const lineStart = text.lastIndexOf("\n", caret - 1) + 1;
   const before = text.slice(lineStart, caret);
-  if (/^\s*#/.test(before)) return none;
+  // A comment runs to the end of the line, so nothing after "#" is code.
+  if (before.includes("#")) return none;
   const head = text.slice(0, lineStart);
 
   let m = before.match(/^\s*@format\s*=\s*(\w*)$/i);

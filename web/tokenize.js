@@ -3,13 +3,16 @@ import { Big, BUILTIN_FUNC_NAMES } from "./builtins.js";
 import { SI_PREFIX, SI_SUFFIX_CHARS } from "./units.js";
 import { _parseISO, _todayDate, _nowValue } from "./dates.js";
 
+// Python spellings. "^" stays an alias for "**".
+const TWO_CHAR_TOKENS = { "**": "POW", "//": "MULOP" };
+
 // "%" is modulo here; a "%" that follows a number is tokenized as PCT instead.
 const SINGLE_CHAR_TOKENS = {
   "+": "ADDOP", "-": "ADDOP", "*": "MULOP", "/": "MULOP", "%": "MULOP",
   "^": "POW", "(": "LPAREN", ")": "RPAREN", ",": "COMMA", "=": "EQ",
 };
 
-const NUM_RE = new RegExp("^(\\d(?:\\d|_|,(?=\\d))*\\.?\\d*|\\.\\d+)(?:([eE][+-]?\\d+)|([" + SI_SUFFIX_CHARS + "]))?");
+const NUM_RE = new RegExp("^(\\d(?:\\d|_)*\\.?\\d*|\\.\\d+)(?:([eE][+-]?\\d+)|([" + SI_SUFFIX_CHARS + "]))?");
 const HEX_BIN_OCT_RE = /^0[xX][0-9a-fA-F]+|^0[bB][01]+|^0[oO][0-7]+/;
 const EMPTY_CALL_RE = /^[ \t]*\([ \t]*\)/;
 
@@ -59,7 +62,7 @@ function tokenize(text) {
     }
     const m = slice.match(NUM_RE);
     if (m && m[1]) {
-      const raw = m[1].replace(/,/g, "").replace(/_/g, "");
+      const raw = m[1].replace(/_/g, "");
       const exp = m[2];
       let val = new Big(exp ? raw + exp : raw);
       const suffix = m[3];
@@ -74,6 +77,10 @@ function tokenize(text) {
       }
       continue;
     }
+    // A comment runs to the end of the line.
+    if (text[i] === "#") { tokens.push(["COMMENT", text.substring(i), start, n]); i = n; continue; }
+    const pair = TWO_CHAR_TOKENS[text.substring(i, i + 2)];
+    if (pair) { tokens.push([pair, text.substring(i, i + 2), start, i + 2]); i += 2; continue; }
     const single = SINGLE_CHAR_TOKENS[text[i]];
     if (single) { tokens.push([single, text[i], start, i+1]); i++; continue; }
     const wm = slice.match(/^[a-zA-Z_]\w*/);
@@ -97,10 +104,12 @@ function tokenize(text) {
       i = end;
       continue;
     }
+    // Anything else is unknown. It reaches the parser and fails the line.
+    tokens.push(["UNKNOWN", text[i], start, i + 1]);
     i++;
   }
   tokens.push(["EOF", null, n, n]);
   return tokens;
 }
 
-export { SINGLE_CHAR_TOKENS, NUM_RE, HEX_BIN_OCT_RE, tokenize };
+export { SINGLE_CHAR_TOKENS, TWO_CHAR_TOKENS, NUM_RE, HEX_BIN_OCT_RE, tokenize };
