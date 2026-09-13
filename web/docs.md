@@ -1,12 +1,10 @@
-"""
 # calced
 
 Write math in plain text. Results appear on the right.
 Edit any line to see the result change. Changes here are not saved.
 
 Every line is a calculation. A line calced cannot read in full shows no
-result, so prose costs you nothing.
-"""
+result, so prose costs you nothing. There is nothing to fence off.
 
 2 + 3                                   # =>     5
 10 * (4 + 6)                            # =>   100
@@ -16,39 +14,26 @@ result, so prose costs you nothing.
 17 % 5                                  # =>     2
 (100 + 50) * 2                          # =>   300
 
-"""
 # Comments
 
-A `#` starts a comment, as in Python. Use one to label a line.
-"""
+A `#` starts a comment, as in Python. Use one to label a line or to write
+a markdown heading.
 
 3.50                                    # bread                  # =>   3.5
 1600 / 12                               # verzekering per maand  # => 133.3333333
 
-"""
-# Prose blocks
-
-Three quotes open and close a block of prose, like a Python docstring.
-Markdown inside it, headings included, is never read. This page uses them
-throughout: every heading you see sits in one.
-"""
-
-"""
 # Variables
 
 Give a value a name, then use the name.
-"""
 
 price = 100                             # => 100
 qty = 3                                 # =>   3
 total = price * qty                     # => 300
 
-"""
 # Totals
 
-sum() adds the lines above it. A blank line, a prose block or an earlier
-total bounds what it reaches.
-"""
+sum() adds the lines above it. A blank line or an earlier total bounds
+what it reaches.
 
 3.50                                    # bread  # =>  3.5  │
 2 * 1.20                                # milk   # =>  2.4  │
@@ -60,11 +45,9 @@ sum()                                            # => 10.85 ┘
 subtotal = sum()                        # => 300 ┘
 subtotal * 2                            # => 600
 
-"""
 # Percentages
 
 `of` takes a part of a number. `as` gives a number as a part of another.
-"""
 
 income = 5000                           # => 5_000
 tax_rate = 22%                          # =>     0.22
@@ -75,20 +58,16 @@ after_tax = income - tax                # => 3_900
 200 - 10%                               # =>   180
 10 as % of 50                           # =>    20
 
-"""
 # SI prefixes
-"""
 
 1k + 500                                # =>      1_500
 10 * 1.5M                               # => 15_000_000
 2.5G / 1000                             # =>  2_500_000
 5m + 3u                                 # =>          0.005003
 
-"""
 # Unit conversions
 
 `to` and `in` mean the same thing.
-"""
 
 5 km in miles                           # =>     3.106855961
 5 km to miles                           # =>     3.106855961
@@ -97,11 +76,9 @@ after_tax = income - tax                # => 3_900
 60 min in hr                            # =>     1
 1 gal in l                              # =>     3.78541
 
-"""
 # Rate conversions
 
 Define your own rate, then convert with it.
-"""
 
 @rate USD/EUR = 0.92
 100 USD in EUR                          # => 92
@@ -110,9 +87,7 @@ Define your own rate, then convert with it.
 @rate BTC/USD = 97500
 0.5 BTC in USD                          # => 48_750
 
-"""
 # Functions
-"""
 
 sqrt(16)                                # => 4
 round(3.14159, 2)                       # => 3.14
@@ -121,21 +96,17 @@ max(1, 9, 3)                            # => 9
 abs(-7)                                 # => 7
 log10(1000)                             # => 3
 
-"""
 # Constants
-"""
 
 pi                                      # =>  3.141592654
 e                                       # =>  2.718281828
 2 * pi * 3                              # => 18.84955592
 
-"""
 # Dates
 
 date() gives today. now() gives the current time. Fixed dates work too.
 
 `days until 2026-12-31` and `weeks since 2026-01-01` count from today.
-"""
 
 2025-01-15 + 3 days                     # => 2025-01-18
 2025-01-31 + 1 month                    # => 2025-02-28
@@ -143,18 +114,14 @@ date() gives today. now() gives the current time. Fixed dates work too.
 deadline = 2025-06-15 + 2 weeks         # => 2025-06-29
 deadline - 2025-06-15                   # => 14
 
-"""
 # Times
-"""
 
 2025-01-15 18:00 - 2025-01-15 09:00     # => 9
 2025-01-15 09:00 + 3 hours              # => 2025-01-15 12:00
 
-"""
 # Number formats
 
 Group digits with `_`. A comma is not a separator and not a decimal point.
-"""
 
 0xff                                    # =>       255
 0b1010                                  # =>        10
@@ -162,12 +129,10 @@ Group digits with `_`. A comma is not a separator and not a decimal point.
 1.5e3                                   # =>     1_500
 1_000_000                               # => 1_000_000
 
-"""
 # Format directives
 
 Modes: `minSig`, `fixed`, `scientific`, `eng` and `auto`. Each takes a digit
 count. Separators: `underscore`, `comma`, `space` and `off`.
-"""
 
 @format = fixed(2)
 1000000                                 # => 1_000_000.00
@@ -182,7 +147,6 @@ count. Separators: `underscore`, `comma`, `space` and `off`.
 @separator = comma
 1000000                                 # => 1,000,000
 
-"""
 Suggestions appear as you type. Ctrl+Space shows the full list.
 
 # Privacy
@@ -192,4 +156,3 @@ holds the text in the URL itself.
 
 The page counts anonymous pageviews with a self-hosted Umami instance.
 It sets no cookies and keeps no personal data.
-"""

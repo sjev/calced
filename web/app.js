@@ -182,8 +182,8 @@ function render() {
     resLines[i].style.height = hlLines[i].getBoundingClientRect().height + 'px';
   }
   scheduleSave();
-  const heading = lines.find((l, i) => output[i] && output[i].cls === "prose" && l.trim().startsWith("#"));
-  document.title = heading ? heading.replace(/^#+ */, "").trim() + " - calced" : "calced";
+  const name = activeName();
+  document.title = name ? name + " - calced" : "calced";
 }
 
 input.addEventListener("input", render);

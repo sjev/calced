@@ -28,7 +28,6 @@ DIRECTIVE_RE = re.compile(r"^@(format|separator)\s*=\s*(.+)$", re.IGNORECASE)
 FORMAT_RE = re.compile(r"^(minSig|fixed|scientific|eng|auto)(?:\((\d+)\))?$", re.IGNORECASE)
 RATE_RE = re.compile(r"^@rate\s+(\w+)/(\w+)\s*=\s*(.+)$", re.IGNORECASE)
 ALIGNABLE_RE = re.compile(r"^-?[\d_, ]+(\.\d+)?$")
-PROSE_FENCE = '"""'
 DEFAULT_FMT_OPTS = {"mode": "minSig", "precision": 10, "separator": "underscore"}
 
 # --- Date/time support ---
@@ -539,7 +538,7 @@ def _span_role(token, in_conv):
     return TOKEN_ROLES.get(token[0], "text")
 
 
-def classify_line(text, variables, rates=None, in_prose=False):
+def classify_line(text, variables, rates=None):
     """Classify tokens in a line for syntax highlighting.
 
     Returns "blank", "prose", "comment", "directive", or a list of
@@ -548,8 +547,6 @@ def classify_line(text, variables, rates=None, in_prose=False):
     colour marks exactly the lines calced reads.
     """
     stripped = text.strip()
-    if in_prose or stripped == PROSE_FENCE:
-        return "prose"
     if not stripped:
         return "blank"
     if stripped.startswith("#"):
@@ -618,9 +615,7 @@ def colorize_expr(text, variables, rates=None):
     return "".join(parts)
 
 
-def colorize_line(
-    line, result, fmt_result_str, align, variables, rates=None, indicator=None, prose=False
-):
+def colorize_line(line, result, fmt_result_str, align, variables, rates=None, indicator=None):
     """Return a colorized version of an output line."""
     stripped = line.strip()
     if result is not None:
@@ -641,9 +636,6 @@ def colorize_line(
             + RESET
             + suffix
         )
-    if prose:
-        # Prose is markdown, so a heading inside it still reads as a heading.
-        return BOLD + line + RESET if stripped.startswith("#") else line
     if stripped.startswith("#") or DIRECTIVE_RE.match(stripped) or RATE_RE.match(stripped):
         return DIM + line + RESET
     return line
@@ -1289,21 +1281,10 @@ def _process_lines(content):
     rates = {}
     results_acc = []
     fmt_opts = dict(DEFAULT_FMT_OPTS)
-    in_prose = False
 
     for line in lines:
         clean = RESULT_RE.sub("", line).rstrip()
         stripped = clean.strip()
-
-        # A prose block holds markdown. Nothing inside it is read.
-        if stripped == PROSE_FENCE:
-            in_prose = not in_prose
-            results_acc.clear()
-            yield Line(clean, ends_block=True)
-            continue
-        if in_prose:
-            yield Line(clean, ends_block=True)
-            continue
 
         # A blank line ends the block, so it bounds the total above it.
         if not stripped:
@@ -1335,8 +1316,8 @@ def _process_lines(content):
 def _split_sections(evaluated):
     """Split the lines into blocks.
 
-    A block is a run of consecutive lines that are neither blank nor prose. It
-    bounds the total, the decimal alignment and the total indicators alike.
+    A block is a run of consecutive non-blank lines. It bounds the total, the
+    decimal alignment and the total indicators alike.
     """
     sections = []
     current = []
@@ -1404,9 +1385,7 @@ def _format_section(section, use_color):
         if line.result is None:
             out.append(line.clean)
             if use_color:
-                col.append(
-                    colorize_line(line.clean, None, None, align, None, prose=line.ends_block)
-                )
+                col.append(colorize_line(line.clean, None, None, align, None))
             continue
         padded = fmt_str.ljust(ind_width) if indicator else fmt_str
         suffix = f" {indicator}" if indicator else ""

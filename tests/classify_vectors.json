@@ -600,29 +600,9 @@
     "expected": "prose"
   },
   {
-    "note": "prose fence opens a block",
+    "note": "three quotes are ordinary text, not a fence",
     "text": "\"\"\"",
     "variables": {},
-    "expected": "prose"
-  },
-  {
-    "note": "indented prose fence",
-    "text": "   \"\"\"   ",
-    "variables": {},
-    "expected": "prose"
-  },
-  {
-    "note": "a line inside a prose block is never read",
-    "text": "2 + 3",
-    "variables": {},
-    "in_prose": true,
-    "expected": "prose"
-  },
-  {
-    "note": "a markdown heading inside a prose block",
-    "text": "# Lease",
-    "variables": {},
-    "in_prose": true,
     "expected": "prose"
   },
   {

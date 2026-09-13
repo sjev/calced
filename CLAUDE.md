@@ -71,13 +71,14 @@ Imports go one way only: `vendor` -> `builtins` -> `units`/`dates` -> `tokenize`
 Key concepts: variable assignments (`x = 5`), format/separator directives (`@format = fixed(2)`), SI prefixes, unit conversions, date and datetime arithmetic, percentages, totals.
 
 **A line computes only when every token is consumed.** No word is dropped and no
-operator is repaired, so one unknown word or stray character makes the line prose. `#`
-starts a comment to the end of the line. A line whose stripped text is exactly `"""`
-toggles a prose block, which holds markdown and is never read.
+operator is repaired, so one unknown word or stray character makes the line prose. There
+is no prose fence: markdown that happens to parse (a `- 5 km in miles` bullet, a bare
+`pi`) computes, and you write it another way. `#` starts a comment to the end of the
+line.
 
-A **block** is a run of consecutive lines that are neither blank nor prose. It bounds
-`sum()`, the decimal alignment and the `│ ┘` indicators alike (`_split_sections` /
-`splitSections`). A `#` line is a comment, not a section heading.
+A **block** is a run of consecutive non-blank lines. It bounds `sum()`, the decimal
+alignment and the `│ ┘` indicators alike (`_split_sections` / `splitSections`). A `#`
+line is a comment, not a section heading.
 
 Zero-argument calls (`date()`, `now()`, `sum()`) resolve in the tokenizer, not the parser — neither parser supports zero-arg calls. This keeps the bare words usable as variable names.
 

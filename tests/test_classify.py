@@ -18,7 +18,7 @@ class TestClassify(unittest.TestCase):
     def test_vectors(self):
         for i, v in enumerate(vectors):
             with self.subTest(i=i, text=v["text"]):
-                result = classify_line(v["text"], v["variables"], in_prose=v.get("in_prose", False))
+                result = classify_line(v["text"], v["variables"])
                 self.assertEqual(result, v["expected"])
 
 
