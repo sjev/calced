@@ -19,7 +19,6 @@ const TOKEN_ROLES = {
   COMMENT: "comment",
 };
 
-const PROSE_FENCE = '"""';
 
 // Highlight role of one token. Only a line that computes is highlighted.
 function _spanRole(token, inConv) {
@@ -31,9 +30,8 @@ function _spanRole(token, inConv) {
 // [start, end, role] spans. The role is one of "dim", "unit", "num", "func",
 // "op", "comment" or "text". A line that does not compute is "prose", so colour
 // marks exactly the lines calced reads.
-function classifyLine(text, variables, rates, inProse) {
+function classifyLine(text, variables, rates) {
   const stripped = text.trim();
-  if (inProse || stripped === PROSE_FENCE) return "prose";
   if (!stripped) return "blank";
   if (stripped.startsWith("#")) return "comment";
   if (DIRECTIVE_RE.test(stripped) || RATE_RE.test(stripped)) return "directive";
@@ -89,11 +87,7 @@ function escapeHTML(s) {
 
 function highlightLine(text, cls) {
   if (cls === "blank") return "";
-  // Prose is markdown, so a heading inside it still reads as a heading.
-  if (cls === "prose") {
-    const tag = text.trim().startsWith("#") ? "hl-heading" : "hl-prose";
-    return '<span class="' + tag + '">' + escapeHTML(text) + '</span>';
-  }
+  if (cls === "prose") return '<span class="hl-prose">' + escapeHTML(text) + '</span>';
   if (cls === "comment") return '<span class="hl-comment">' + escapeHTML(text) + '</span>';
   if (cls === "directive") return '<span class="hl-dim">' + escapeHTML(text) + '</span>';
   let html = "";
@@ -107,8 +101,8 @@ function highlightLine(text, cls) {
 const RESULT_RE = /\s{2,}# => .*$/;
 const ALIGNABLE_RE = /^-?[\d_, ]+(\.\d+)?$/;
 
-// A block is a run of consecutive lines that are neither blank nor prose. It
-// bounds the total, the decimal alignment and the total indicators alike.
+// A block is a run of consecutive non-blank lines. It bounds the total, the
+// decimal alignment and the total indicators alike.
 function splitSections(output) {
   const sections = [];
   let cur = [];
@@ -198,21 +192,8 @@ function processText(text) {
   let resultsAcc = [];
   const fmtOpts = { ...DEFAULT_FMT_OPTS };
   const output = [];
-  let inProse = false;
   for (const line of lines) {
     const stripped = line.trim();
-
-    // A prose block holds markdown. Nothing inside it is read.
-    if (stripped === PROSE_FENCE) {
-      inProse = !inProse;
-      resultsAcc = [];
-      output.push({ result: null, cls: "prose", endsBlock: true });
-      continue;
-    }
-    if (inProse) {
-      output.push({ result: null, cls: classifyLine(line, variables, rates, true), endsBlock: true });
-      continue;
-    }
 
     // A blank line ends the block, so it bounds the total above it.
     if (!stripped) {
@@ -221,7 +202,7 @@ function processText(text) {
       continue;
     }
 
-    const cls = classifyLine(line, variables, rates, false);
+    const cls = classifyLine(line, variables, rates);
     if (applyDirective(stripped, fmtOpts, rates)) {
       output.push({ result: null, cls });
       continue;
@@ -246,7 +227,39 @@ function processText(text) {
   return output;
 }
 
+// The text with `# =>` results, aligned per section. Used by copy and by the fixtures.
+function formatForFile(text) {
+  const lines = text.split("\n");
+  const output = processText(text);
+  const aligned = alignDecimalPoints(output, "int");
+  const indicators = computeTotalIndicators(output);
+  const formatted = new Array(lines.length);
+  for (const sec of splitSections(output)) {
+    const resultIdxs = sec.filter(i => output[i].result !== null);
+    const maxLen = resultIdxs.length ? Math.max(...resultIdxs.map(i => lines[i].length)) : 0;
+    const align = Math.max(maxLen + 2, 40);
+    // Indicator-bearing results share one width, so the │ ┘ marks line up.
+    let maxIndW = 0;
+    for (const i of sec) {
+      if (output[i].result !== null && indicators[i]) {
+        maxIndW = Math.max(maxIndW, aligned[i].length);
+      }
+    }
+    for (const i of sec) {
+      if (output[i].result !== null) {
+        const hasInd = indicators[i];
+        const ind = indicators[i] === "summed" ? " │" : indicators[i] === "total" ? " ┘" : "";
+        const padded = hasInd ? aligned[i].padEnd(maxIndW) : aligned[i];
+        formatted[i] = lines[i].padEnd(align) + "# => " + padded + ind;
+      } else {
+        formatted[i] = lines[i];
+      }
+    }
+  }
+  return formatted.join("\n");
+}
+
 export {
-  classifyLine, escapeHTML, highlightLine, processText,
+  classifyLine, escapeHTML, highlightLine, processText, formatForFile,
   RESULT_RE, splitSections, computeTotalIndicators, alignDecimalPoints,
 };
