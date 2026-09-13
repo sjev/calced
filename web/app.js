@@ -1,7 +1,7 @@
 // DOM wiring: render loop, file menu, docs document, autocomplete popup, share link, copy.
 import {
-  processText, highlightLine, escapeHTML,
-  RESULT_RE, splitSections, computeTotalIndicators, alignDecimalPoints,
+  processText, highlightLine, escapeHTML, formatForFile,
+  RESULT_RE, computeTotalIndicators, alignDecimalPoints,
 } from "./document.js";
 import { suggest, ASSIGN_RE } from "./suggest.js";
 import * as store from "./store.js";
@@ -347,41 +347,6 @@ function scheduleSave() {
   clearTimeout(saveTimer);
   if (docsMode) return;
   saveTimer = setTimeout(() => store.saveActive(input.value), 300);
-}
-
-function formatForFile(text) {
-  const lines = text.split("\n");
-  const output = processText(text);
-  const aligned = alignDecimalPoints(output, "int");
-  const indicators = computeTotalIndicators(output);
-
-  // Per-section column alignment (match Python CLI behavior)
-  const sections = splitSections(output);
-
-  const formatted = new Array(lines.length);
-  for (const sec of sections) {
-    const resultIdxs = sec.filter(i => output[i].result !== null);
-    const maxLen = resultIdxs.length ? Math.max(...resultIdxs.map(i => lines[i].length)) : 0;
-    const align = Math.max(maxLen + 2, 40);
-    // Compute max result width among indicator-bearing lines for alignment
-    let maxIndW = 0;
-    for (const i of sec) {
-      if (output[i].result !== null && indicators[i]) {
-        maxIndW = Math.max(maxIndW, aligned[i].length);
-      }
-    }
-    for (const i of sec) {
-      if (output[i].result !== null) {
-        const hasInd = indicators[i];
-        const ind = indicators[i] === "summed" ? " │" : indicators[i] === "total" ? " ┘" : "";
-        const padded = hasInd ? aligned[i].padEnd(maxIndW) : aligned[i];
-        formatted[i] = lines[i].padEnd(align) + "# => " + padded + ind;
-      } else {
-        formatted[i] = lines[i];
-      }
-    }
-  }
-  return formatted.join("\n");
 }
 
 function copyText() {

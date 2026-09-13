@@ -227,7 +227,39 @@ function processText(text) {
   return output;
 }
 
+// The text with `# =>` results, aligned per section. Used by copy and by the fixtures.
+function formatForFile(text) {
+  const lines = text.split("\n");
+  const output = processText(text);
+  const aligned = alignDecimalPoints(output, "int");
+  const indicators = computeTotalIndicators(output);
+  const formatted = new Array(lines.length);
+  for (const sec of splitSections(output)) {
+    const resultIdxs = sec.filter(i => output[i].result !== null);
+    const maxLen = resultIdxs.length ? Math.max(...resultIdxs.map(i => lines[i].length)) : 0;
+    const align = Math.max(maxLen + 2, 40);
+    // Indicator-bearing results share one width, so the │ ┘ marks line up.
+    let maxIndW = 0;
+    for (const i of sec) {
+      if (output[i].result !== null && indicators[i]) {
+        maxIndW = Math.max(maxIndW, aligned[i].length);
+      }
+    }
+    for (const i of sec) {
+      if (output[i].result !== null) {
+        const hasInd = indicators[i];
+        const ind = indicators[i] === "summed" ? " │" : indicators[i] === "total" ? " ┘" : "";
+        const padded = hasInd ? aligned[i].padEnd(maxIndW) : aligned[i];
+        formatted[i] = lines[i].padEnd(align) + "# => " + padded + ind;
+      } else {
+        formatted[i] = lines[i];
+      }
+    }
+  }
+  return formatted.join("\n");
+}
+
 export {
-  classifyLine, escapeHTML, highlightLine, processText,
+  classifyLine, escapeHTML, highlightLine, processText, formatForFile,
   RESULT_RE, splitSections, computeTotalIndicators, alignDecimalPoints,
 };

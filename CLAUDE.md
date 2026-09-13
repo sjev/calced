@@ -4,48 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Calced is a notepad calculator that evaluates math expressions in plain text. Two implementations share the same syntax and test suite:
-
-- **Python CLI** (`python/calced.py`) — single file, stdlib only, uses `Decimal` for precision
-- **JavaScript web app** (`web/`) — ES modules, big.js for precision, no build step
-
-When referring to "JS" or "JavaScript", that means the web version in `web/`.
+Calced is a notepad calculator that evaluates math expressions in plain text. It is a web app in `web/`: ES modules, big.js for precision, no build step.
 
 ## Commands
 
 Automation uses [invoke](https://www.pyinvoke.org/). Run `inv -l` for the full list.
 
 ```bash
-uv sync                # Create .venv with the dev dependencies
-inv ci                 # Lint + all tests
-inv lint               # ruff check + ruff format --check
-inv format             # ruff format
-inv test               # All tests (Python + JS)
-inv test-py            # Python unit tests + .md integration tests
-inv test-js            # JavaScript tests (node web/test.mjs)
+uv sync                     # Create .venv with invoke
+inv test                    # All tests (node)
+node web/test.mjs --update  # Rewrite tests/*.md and web/docs.md with current results
+git diff -- tests web/docs.md  # review what --update changed
 
 # Serve the web app. ES modules need HTTP; file:// does not work.
 python3 -m http.server 8000 --directory web
-inv test-property      # Property-based tests (hypothesis)
-inv test-diff          # Differential fuzz between both engines
 
-# Run a single Python test file
-uv run python -m unittest tests.test_evaluate
-
-# Run a single .md integration test
-uv run python python/calced.py tests/basic_arithmetic.md
-git diff --exit-code -- tests/basic_arithmetic.md  # verify no changes
-
-# Regenerate README (uses cogapp to run inline examples)
-inv readme
+inv bump patch              # patch, minor or major; commits the version
+inv release                 # test, deploy to gh-pages, push
 ```
 
 ## Architecture
 
-Both implementations follow the same pipeline: **tokenize → classify line → parse → evaluate → format result → align output**.
-
-- `python/calced.py` (~1500 lines): recursive descent parser, `Decimal` arithmetic, CLI with argparse (modes: single-run, watch, show, url, json, dry-run)
-- `web/`: the same engine as ES modules. Import only the module you need.
+The pipeline: **tokenize → classify line → parse → evaluate → format result → align output**.
 
 | File | Holds |
 | --- | --- |
@@ -58,7 +38,7 @@ Both implementations follow the same pipeline: **tokenize → classify line → 
 | `tokenize.js` | text to token list |
 | `evaluate.js` | `Parser` class, expression evaluation |
 | `format.js` | number to display string |
-| `document.js` | line classification, `processText`, highlight, alignment |
+| `document.js` | line classification, `processText`, highlight, alignment, `formatForFile` |
 | `suggest.js` | autocomplete suggestions, no DOM |
 | `store.js` | named documents in localStorage, no DOM |
 | `share.js` | document to `?data=` link and back |
@@ -77,22 +57,15 @@ is no prose fence: markdown that happens to parse (a `- 5 km in miles` bullet, a
 line.
 
 A **block** is a run of consecutive non-blank lines. It bounds `sum()`, the decimal
-alignment and the `│ ┘` indicators alike (`_split_sections` / `splitSections`). A `#`
-line is a comment, not a section heading.
+alignment and the `│ ┘` indicators alike (`splitSections`). A `#` line is a comment, not
+a section heading.
 
-Zero-argument calls (`date()`, `now()`, `sum()`) resolve in the tokenizer, not the parser — neither parser supports zero-arg calls. This keeps the bare words usable as variable names.
+Zero-argument calls (`date()`, `now()`, `sum()`) resolve in the tokenizer, not the parser — the parser does not support zero-arg calls. This keeps the bare words usable as variable names.
 
 ## Test Structure
 
-- **`tests/*.md`** — Integration tests. Each line with `# =>` has an expected result. The Python CLI processes these in-place; `git diff --exit-code` verifies nothing changed.
-- **`tests/evaluate_vectors.json`** / **`tests/classify_vectors.json`** — Shared unit test vectors used by both Python and JS test runners.
-- **`tests/test_*.py`** — Python unit tests (unittest framework). `test_cli.py` tests CLI flags via subprocess.
-- **`web/test.mjs`** — JS test runner. It imports the engine modules directly and runs against the same vectors and `.md` files. `web/test-suggest.mjs` covers autocomplete, `web/test-store.mjs` the document store.
+- **`tests/*.md`** and **`web/docs.md`** — Integration tests. Each line with `# =>` has an expected result. `web/test.mjs` checks every result.
+- **`tests/evaluate_vectors.json`** / **`tests/classify_vectors.json`** — Unit test vectors for `evaluateLine` and `classifyLine`.
+- **`web/test.mjs`** — runs the vectors and the `.md` files. `web/test-suggest.mjs` covers autocomplete, `web/test-store.mjs` the document store.
 
-New tests should use `.md` fixture files or add vectors to the JSON files — these are run against both implementations. Only use Python unittest classes for Python-specific CLI behavior.
-
-## Cross-Language Consistency
-
-Features must work identically in both Python and JS. When implementing a change, check both implementations and run `inv test` to verify both pass. The `.md` integration tests and JSON vectors are shared across both.
-
-For non-trivial features, consider using separate agents for the Python and JS implementations, then run `inv test` to verify both pass.
+New tests go in a `.md` fixture or a JSON vector file.
