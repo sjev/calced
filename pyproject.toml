@@ -1,6 +1,6 @@
 [project]
 name = "calced"
-version = "2.0.0"
+version = "2.0.1"
 requires-python = ">=3.10"
 description = "A notepad calculator that evaluates math expressions in plain text"
 license = "MIT"
