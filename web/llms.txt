@@ -1,0 +1,104 @@
+# calced: instructions for LLM agents
+
+calced is a notepad calculator at https://sjev.github.io/calced/
+The user types plain text. Each line that is a full expression shows a result
+on the right. All other lines are prose and show nothing.
+
+Your task is usually: write a calced document for the user, then give a link.
+
+# Link format
+
+Give the user this link:
+
+https://sjev.github.io/calced/?text=PERCENT_ENCODED_DOCUMENT
+
+Encode the document with encodeURIComponent rules:
+space is %20, newline is %0A, plus is %2B, hash is %23, equals is %3D,
+slash is %2F, percent is %25, ampersand is %26.
+Do not encode a space as a plus sign.
+Example: the document "a = 2" then "a + 1" is ?text=a%20%3D%202%0Aa%20%2B%201
+
+# Rules
+
+A line computes only when the parser uses every token. One unknown word or
+stray character makes the whole line prose. calced does not repair a line.
+Write one calculation per line. Put the label in a comment after the hash.
+Do not use a comma in a number. Write 1000 or 1_000, not 1,000.
+A blank line ends a block. sum() adds only the lines above it in its block.
+Variable names are letters, digits and underscores. Assign them before use.
+Define a currency rate with @rate before you convert that currency.
+The only calls with no arguments are date(), now() and sum().
+In this file, the text after the result marker is the output of calced.
+Do not write result markers in your document. calced makes them.
+
+# Operators
+
+2 + 3 * 4                               # =>    14
+2 ** 10                                 # => 1_024
+7 // 2                                  # =>     3
+17 % 5                                  # =>     2
+
+# Variables and totals
+
+rent = 1200                             # => 1_200
+food = 450                              # =>   450
+rent + food                             # => 1_650
+
+3.50                                    # bread  # =>  3.5  │
+2 * 1.20                                # milk   # =>  2.4  │
+4.95                                    # eggs   # =>  4.95 │
+groceries = sum()                                # => 10.85 ┘
+
+# Percentages
+
+price = 80                              # => 80
+price + 21%                             # => 96.8
+price - 10%                             # => 72
+15% of price                            # => 12
+20 as % of price                        # => 25
+
+# Units and SI prefixes
+
+Units: mm cm m km in ft yd mi, mg g kg oz lb, C F K,
+b kb mb gb tb kib mib gib tib, ms s min hr day week,
+ml l tsp tbsp floz pt qt gal. Use in or to for a conversion.
+SI suffixes: k M G for large, m u for small.
+
+5 km in miles                           # =>      3.106855961
+100 C in F                              # =>    212
+2.5k * 4                                # => 10_000
+
+# Currencies
+
+@rate USD/EUR = 0.92
+100 USD in EUR                          # => 92
+
+# Functions and constants
+
+sqrt abs floor ceil log log2 log10 exp sin cos tan asin acos atan
+round(x, digits) min(a, b) max(a, b), and the constants pi e tau.
+
+round(2 * pi * 3, 2)                    # => 18.85
+max(3, 9, 4)                            # =>  9
+
+# Dates
+
+date() is today and now() is the current time.
+
+2025-01-15 + 3 days                     # => 2025-01-18
+2025-03-01 - 2025-01-01                 # => 59
+2025-01-15 18:00 - 2025-01-15 09:00     # =>  9
+
+# Output format
+
+@format = fixed(2)
+1234.5                                  # => 1_234.50
+@separator = comma
+1234.5                                  # => 1,234.50
+
+Format modes: minSig, fixed, scientific, eng and auto.
+Separators: underscore, comma, space and off.
+
+# Full reference
+
+https://sjev.github.io/calced/docs.md

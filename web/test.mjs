@@ -69,6 +69,7 @@ let failedFiles = [];
 const files = readdirSync(testsDir).filter(f => f.endsWith(".md")).sort()
   .map(f => join(testsDir, f));
 files.push(join(__dirname, "docs.md"));  // every example in the docs is a test
+files.push(join(__dirname, "llms.txt"));
 
 for (const path of files) {
   const file = basename(path);
