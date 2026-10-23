@@ -64,7 +64,7 @@ Zero-argument calls (`date()`, `now()`, `sum()`) resolve in the tokenizer, not t
 
 ## Test Structure
 
-- **`tests/*.md`** and **`web/docs.md`** — Integration tests. Each line with `# =>` has an expected result. `web/test.mjs` checks every result.
+- **`tests/*.md`**, **`web/docs.md`** and **`web/llms.txt`** (agent spec, served at the site root) — Integration tests. Each line with `# =>` has an expected result. `web/test.mjs` checks every result.
 - **`tests/evaluate_vectors.json`** / **`tests/classify_vectors.json`** — Unit test vectors for `evaluateLine` and `classifyLine`.
 - **`web/test.mjs`** — runs the vectors and the `.md` files. `web/test-suggest.mjs` covers autocomplete, `web/test-store.mjs` the document store.
 

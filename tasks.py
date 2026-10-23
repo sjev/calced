@@ -80,6 +80,7 @@ def bump(c, part):
 REDIRECT_HTML = """<!DOCTYPE html>
 <html>
 <head>
+<script>location.replace("./{major}/" + location.search + location.hash)</script>
 <meta http-equiv="refresh" content="0;url=./{major}/">
 <meta property="og:title" content="calced">
 <meta property="og:description" content="A notepad calculator that evaluates math \
@@ -116,6 +117,8 @@ def deploy_web(c):
             ignore=shutil.ignore_patterns("test*.mjs", "package.json", "og.png"),
         )
         shutil.copy("web/og.png", Path(tmp, "og.png"))
+        for name in ("llms.txt", "docs.md"):  # unversioned URLs for agents
+            shutil.copy(Path("web", name), Path(tmp, name))
         Path(tmp, "index.html").write_text(REDIRECT_HTML.format(major=major, site=SITE_URL))
         Path(tmp, ".nojekyll").touch()
 

@@ -26,8 +26,23 @@ export async function shareLink(text) {
   return location.origin + location.pathname + "?data=" + await compressText(text);
 }
 
+// ?text= carries plain percent-encoded text, so an LLM can write a link without
+// compression. decodeURIComponent keeps a raw "+" as plus; URLSearchParams would make it a space.
+function readText() {
+  const m = location.search.match(/[?&]text=([^&]*)/);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch (e) {
+    console.error("Failed to decode ?text=", e);
+    return null;
+  }
+}
+
 // Returns the shared text, or null when the URL carries no data.
 export async function readShared() {
+  const text = readText();
+  if (text !== null) return text;
   const data = new URLSearchParams(location.search).get("data");
   if (!data) return null;
   try {
